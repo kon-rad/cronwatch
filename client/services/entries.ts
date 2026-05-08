@@ -3,10 +3,15 @@ import {
   collection,
   deleteDoc,
   doc,
+  DocumentSnapshot,
+  getDoc,
+  getDocs,
+  limit as fbLimit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  startAfter,
   Timestamp,
   updateDoc,
   where,
@@ -80,6 +85,95 @@ export function subscribeToToday(uid: string, cb: Listener): () => void {
     const entries = snap.docs.map((d) => fromFirestore(d.id, d.data() as Record<string, unknown>));
     cb(entries);
   });
+}
+
+export function subscribeToRange(
+  uid: string,
+  from: Date,
+  to: Date,
+  cb: Listener,
+): () => void {
+  const col = entriesCol(uid);
+  if (!col) {
+    const filter = (es: Entry[]) =>
+      es.filter((e) => {
+        const start = Date.parse(e.startTime);
+        return start >= from.getTime() && start <= to.getTime();
+      });
+    const wrapped: Listener = (es) => cb(filter(es));
+    stubListeners.add(wrapped);
+    cb(filter(stubSnapshot()));
+    return () => stubListeners.delete(wrapped);
+  }
+  const q = query(
+    col,
+    where('startTime', '>=', Timestamp.fromDate(from)),
+    where('startTime', '<=', Timestamp.fromDate(to)),
+    orderBy('startTime', 'asc'),
+  );
+  return onSnapshot(q, (snap) => {
+    const entries = snap.docs.map((d) => fromFirestore(d.id, d.data() as Record<string, unknown>));
+    cb(entries);
+  });
+}
+
+export function subscribeFirstPage(
+  uid: string,
+  pageSize: number,
+  cb: (entries: Entry[], lastCursor: DocumentSnapshot | null) => void,
+): () => void {
+  const col = entriesCol(uid);
+  if (!col) {
+    const fire: Listener = () => {
+      const snap = stubSnapshot().slice().reverse().slice(0, pageSize);
+      cb(snap, null);
+    };
+    stubListeners.add(fire);
+    fire(stubSnapshot());
+    return () => stubListeners.delete(fire);
+  }
+  const q = query(col, orderBy('createdAt', 'desc'), fbLimit(pageSize));
+  return onSnapshot(q, (snap) => {
+    const entries = snap.docs.map((d) =>
+      fromFirestore(d.id, d.data() as Record<string, unknown>),
+    );
+    const lastCursor = snap.docs.length ? snap.docs[snap.docs.length - 1] : null;
+    cb(entries, lastCursor);
+  });
+}
+
+export async function loadMore(
+  uid: string,
+  cursor: DocumentSnapshot | null,
+  pageSize: number,
+): Promise<{ entries: Entry[]; lastCursor: DocumentSnapshot | null; hasMore: boolean }> {
+  const col = entriesCol(uid);
+  if (!col || !cursor) {
+    return { entries: [], lastCursor: null, hasMore: false };
+  }
+  const q = query(
+    col,
+    orderBy('createdAt', 'desc'),
+    startAfter(cursor),
+    fbLimit(pageSize),
+  );
+  const snap = await getDocs(q);
+  const entries = snap.docs.map((d) =>
+    fromFirestore(d.id, d.data() as Record<string, unknown>),
+  );
+  const lastCursor = snap.docs.length ? snap.docs[snap.docs.length - 1] : null;
+  return { entries, lastCursor, hasMore: entries.length === pageSize };
+}
+
+export async function getEntry(uid: string, id: string): Promise<Entry | null> {
+  const col = entriesCol(uid);
+  if (!col) {
+    return stubStore.find((e) => e.id === id) ?? null;
+  }
+  const ref = doc(col, id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return null;
+  return fromFirestore(snap.id, snap.data() as Record<string, unknown>);
 }
 
 function parseIso(label: string, value: string): Date {
