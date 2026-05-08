@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.env.local
+.deploy.env
+*.log
+.DS_Store
+cronwatch-3501b-firebase-adminsdk-fbsvc-458448f850.json
+*-firebase-adminsdk-*.json

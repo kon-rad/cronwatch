@@ -1,0 +1,35 @@
+{
+  "name": "cronwatch-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Capture proxy: audio upload to S3, Deepgram transcription, Together AI structuring.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.901.0",
+    "@deepgram/sdk": "^5.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.0.1",
+    "express": "^5.2.1",
+    "firebase-admin": "^13.8.0",
+    "multer": "^2.1.1",
+    "together-ai": "^0.39.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^22.18.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.2"
+  }
+}

@@ -1,0 +1,57 @@
+# --- Secrets / env ---
+.env
+.env.*
+!.env.example
+.deploy.env
+.deploy.env.*
+!.deploy.env.example
+
+# Firebase admin SDK service account keys
+*-firebase-adminsdk-*.json
+serviceAccount*.json
+*-service-account*.json
+
+# Generic credential / key material
+*.pem
+*.key
+*.p8
+*.p12
+*.jks
+*.mobileprovision
+*.keystore
+id_rsa
+id_ed25519
+id_ecdsa
+
+# --- Dependencies ---
+node_modules/
+
+# --- Build output ---
+dist/
+build/
+web-build/
+.expo/
+expo-env.d.ts
+*.tsbuildinfo
+
+# --- Native (Expo prebuild) ---
+client/ios/
+client/android/
+.kotlin/
+*.orig.*
+
+# --- Logs / debug ---
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.metro-health-check*
+
+# --- macOS / editor cruft ---
+.DS_Store
+.idea/
+.vscode/
+
+# --- Tooling state ---
+.claude/scheduled_tasks.lock
+.claude/**/state.json
