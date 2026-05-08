@@ -22,24 +22,23 @@ import {
 } from 'expo-audio';
 import { colors, radii, shadow, spacing } from '@/theme/tokens';
 import { type as t } from '@/theme/typography';
-import { captureFromAudio, captureFromText } from '@/services/capture';
+import { captureFromText } from '@/services/capture';
 import { createEntry } from '@/services/entries';
+import { enqueue as enqueueCapture } from '@/services/captureQueue';
 import { getCurrentUser } from '@/services/auth';
 
-type Phase = 'idle' | 'recording' | 'transcribing' | 'structuring' | 'saved';
+type Phase = 'idle' | 'recording' | 'structuring' | 'saved';
 
 export default function Capture() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('idle');
-  const [transcript, setTranscript] = useState('');
   const [typed, setTyped] = useState('');
   const pulse = useRef(new Animated.Value(1)).current;
 
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(audioRecorder);
-  const captureResultRef = useRef<Awaited<ReturnType<typeof captureFromAudio>> | null>(null);
 
-  const hasContent = transcript.trim().length > 0 || typed.trim().length > 0;
+  const hasContent = typed.trim().length > 0;
 
   useEffect(() => {
     (async () => {
@@ -79,8 +78,6 @@ export default function Capture() {
   const onPressIn = async () => {
     if (phase !== 'idle') return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    setTranscript('');
-    captureResultRef.current = null;
     try {
       await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
@@ -94,44 +91,30 @@ export default function Capture() {
 
   const onPressOut = async () => {
     if (phase !== 'recording') return;
-    setPhase('transcribing');
     try {
       await audioRecorder.stop();
       const uri = audioRecorder.uri;
       if (!uri) throw new Error('Recording produced no file.');
-      const result = await captureFromAudio(uri);
-      captureResultRef.current = result;
-      setTranscript(result.transcript);
-      setPhase('idle');
+      const uid = getCurrentUser()?.uid;
+      if (!uid) throw new Error('Not signed in.');
+      enqueueCapture(uid, uri);
+      router.back();
     } catch (err) {
-      console.warn('[capture] capture failed', err);
-      Alert.alert('Capture failed', err instanceof Error ? err.message : 'Unknown error');
+      console.warn('[capture] recording failed', err);
+      Alert.alert('Could not save recording', err instanceof Error ? err.message : 'Unknown error');
       setPhase('idle');
     }
   };
 
   const onSave = async () => {
-    if (!hasContent) return;
-    const isTyped = typed.trim().length > 0 && transcript.trim().length === 0;
+    const trimmed = typed.trim();
+    if (!trimmed) return;
     setPhase('structuring');
     try {
       const uid = getCurrentUser()?.uid;
       if (!uid) throw new Error('Not signed in.');
-
-      if (isTyped) {
-        const trimmed = typed.trim();
-        const draft = await captureFromText(trimmed);
-        await createEntry(uid, { ...draft, source: 'text', transcript: trimmed });
-      } else {
-        const result = captureResultRef.current;
-        if (!result) throw new Error('Voice capture result is missing.');
-        await createEntry(uid, {
-          ...result.draft,
-          source: 'voice',
-          transcript: result.transcript,
-          audioUrl: result.audioUrl,
-        });
-      }
+      const draft = await captureFromText(trimmed);
+      await createEntry(uid, { ...draft, source: 'text', transcript: trimmed });
       setPhase('saved');
       setTimeout(() => router.back(), 600);
     } catch (err) {
@@ -142,8 +125,7 @@ export default function Capture() {
   };
 
   const saveDisabled = !hasContent || phase === 'structuring' || phase === 'saved';
-  const recordDisabled =
-    phase === 'transcribing' || phase === 'structuring' || phase === 'saved';
+  const recordDisabled = phase === 'structuring' || phase === 'saved';
 
   return (
     <View style={styles.root}>
@@ -171,28 +153,20 @@ export default function Capture() {
         <Text style={[t.body, { color: colors.muted, textAlign: 'center' }]}>
           {phase === 'recording'
             ? 'Listening…'
-            : phase === 'transcribing'
-              ? 'Transcribing…'
-              : phase === 'structuring'
-                ? 'Structuring…'
-                : transcript
-                  ? null
-                  : 'Hold to record, or type below.'}
+            : phase === 'structuring'
+              ? 'Saving…'
+              : 'Hold to record, or type below.'}
         </Text>
 
-        {transcript ? (
-          <Text style={[t.body, styles.transcript]}>{transcript}</Text>
-        ) : (
-          <View style={styles.waveformPlaceholder}>
-            {recorderState.isRecording ? (
-              <Waveform />
-            ) : (
-              <Text style={[t.caption, { color: colors.muted, letterSpacing: 4 }]}>
-                ............
-              </Text>
-            )}
-          </View>
-        )}
+        <View style={styles.waveformPlaceholder}>
+          {recorderState.isRecording ? (
+            <Waveform />
+          ) : (
+            <Text style={[t.caption, { color: colors.muted, letterSpacing: 4 }]}>
+              ............
+            </Text>
+          )}
+        </View>
 
         <View style={styles.recordWrap}>
           <Animated.View style={{ transform: [{ scale: pulse }] }}>
@@ -208,7 +182,7 @@ export default function Capture() {
               accessibilityLabel="Hold to record"
               accessibilityRole="button"
             >
-              {phase === 'transcribing' || phase === 'structuring' ? (
+              {phase === 'structuring' ? (
                 <ActivityIndicator color={colors.white} />
               ) : (
                 <Mic color={colors.white} size={28} strokeWidth={1.75} />
