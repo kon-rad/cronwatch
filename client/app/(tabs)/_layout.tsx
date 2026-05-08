@@ -1,6 +1,6 @@
 import { Tabs, useRouter } from 'expo-router';
 import { Pressable, View } from 'react-native';
-import { Calendar, Home, User, Mic } from 'lucide-react-native';
+import { Calendar, Home, List as ListIcon, User, Mic } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, shadow } from '@/theme/tokens';
 
@@ -34,6 +34,14 @@ export default function TabsLayout() {
           options={{
             tabBarIcon: ({ color, size }) => (
               <Calendar color={color} size={size} strokeWidth={1.75} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="list"
+          options={{
+            tabBarIcon: ({ color, size }) => (
+              <ListIcon color={color} size={size} strokeWidth={1.75} />
             ),
           }}
         />
