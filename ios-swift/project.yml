@@ -1,0 +1,76 @@
+name: Cronwatch
+options:
+  bundleIdPrefix: com.konradgnat.cronwatch
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: "11.0.0"
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: "8.0.0"
+  RevenueCat:
+    url: https://github.com/RevenueCat/purchases-ios
+    from: "5.0.0"
+targets:
+  Cronwatch:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Cronwatch
+        excludes:
+          - "Info.plist"
+    info:
+      path: Cronwatch/Info.plist
+      properties:
+        CFBundleDisplayName: Cronwatch
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UIRequiredDeviceCapabilities: [arm64]
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSMicrophoneUsageDescription: "Cronwatch listens when you tap to capture an entry by voice."
+        FIREBASE_API_KEY: $(FIREBASE_API_KEY)
+        FIREBASE_PROJECT_ID: $(FIREBASE_PROJECT_ID)
+        FIREBASE_APP_ID: $(FIREBASE_APP_ID)
+        FIREBASE_MESSAGING_SENDER_ID: $(FIREBASE_MESSAGING_SENDER_ID)
+        FIREBASE_STORAGE_BUCKET: $(FIREBASE_STORAGE_BUCKET)
+        GOOGLE_IOS_CLIENT_ID: $(GOOGLE_IOS_CLIENT_ID)
+        CAPTURE_PROXY_URL: $(CAPTURE_PROXY_URL)
+        REVENUECAT_API_KEY_IOS: $(REVENUECAT_API_KEY_IOS)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.konradgnat.cronwatch.swift
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_PREVIEWS: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    dependencies:
+      - package: Firebase
+        product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseFirestore
+      - package: Firebase
+        product: FirebaseStorage
+      - package: GoogleSignIn
+        product: GoogleSignIn
+      - package: GoogleSignIn
+        product: GoogleSignInSwift
+      - package: RevenueCat
+        product: RevenueCat
+    entitlements:
+      path: Cronwatch/Cronwatch.entitlements
+      properties:
+        com.apple.developer.applesignin:
+          - Default

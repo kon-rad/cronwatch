@@ -1,0 +1,39 @@
+# macOS
+.DS_Store
+
+# Env
+.env
+.env.local
+
+# Xcode
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+build/
+*.xcworkspace/xcuserdata/
+*.xcuserstate
+*.xcscheme
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+Packages/
+Package.pins
+Package.resolved
+.swiftpm/
+
+# CocoaPods (not used, but ignore in case)
+Pods/
+
+# Carthage (not used)
+Carthage/Build/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
