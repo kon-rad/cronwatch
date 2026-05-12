@@ -4,6 +4,7 @@
 # Env
 .env
 .env.local
+Cronwatch/Config.xcconfig
 
 # Xcode
 *.xcodeproj/

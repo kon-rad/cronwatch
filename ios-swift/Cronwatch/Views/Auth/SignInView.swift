@@ -4,6 +4,9 @@ import UIKit
 struct SignInView: View {
     @EnvironmentObject var auth: AuthService
 
+    @State private var errorMessage: String?
+    @State private var isSigningIn = false
+
     var body: some View {
         ZStack {
             Palette.bg.ignoresSafeArea()
@@ -39,18 +42,43 @@ struct SignInView: View {
                     if AppEnvironment.googleIOSClientID != nil {
                         googleButton
                     }
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.cwCaption)
+                            .foregroundStyle(Palette.danger)
+                            .multilineTextAlignment(.center)
+                            .padding(.top, Spacing.sm)
+                    }
                     termsCaption
                         .padding(.top, Spacing.sm)
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.bottom, Spacing.xl)
             }
+
+            if isSigningIn {
+                Color.black.opacity(0.08).ignoresSafeArea()
+                ProgressView().tint(Palette.amber)
+            }
+        }
+    }
+
+    private func performSignIn(_ run: @escaping () async throws -> Void) {
+        Task {
+            isSigningIn = true
+            defer { isSigningIn = false }
+            do {
+                errorMessage = nil
+                try await run()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
     private var appleButton: some View {
         Button {
-            Task { try? await auth.signInWithApple() }
+            performSignIn { _ = try await auth.signInWithApple() }
         } label: {
             HStack(spacing: Spacing.sm) {
                 Image(systemName: "applelogo")
@@ -71,9 +99,11 @@ struct SignInView: View {
 
     private var googleButton: some View {
         Button {
-            let vc = topViewController()
-            guard let vc else { return }
-            Task { try? await auth.signInWithGoogle(presenting: vc) }
+            guard let vc = topViewController() else {
+                errorMessage = "Couldn't find a view controller to present sign-in."
+                return
+            }
+            performSignIn { _ = try await auth.signInWithGoogle(presenting: vc) }
         } label: {
             HStack(spacing: Spacing.sm) {
                 Text("G")
