@@ -7,7 +7,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: "DHB5JNF8ZW"
     MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Automatic
@@ -41,6 +41,10 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         NSMicrophoneUsageDescription: "Cronwatch listens when you tap to capture an entry by voice."
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - com.googleusercontent.apps.387703217931-uatt5herfhc7ptrqv0s61tqm0h4cbai2
+            CFBundleURLName: GoogleSignIn
         FIREBASE_API_KEY: $(FIREBASE_API_KEY)
         FIREBASE_PROJECT_ID: $(FIREBASE_PROJECT_ID)
         FIREBASE_APP_ID: $(FIREBASE_APP_ID)

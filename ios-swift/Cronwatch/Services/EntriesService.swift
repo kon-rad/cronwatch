@@ -1,14 +1,19 @@
 import Foundation
 import FirebaseFirestore
 
+enum EntriesServiceError: Error, LocalizedError {
+    case firebaseNotConfigured
+
+    var errorDescription: String? {
+        switch self {
+        case .firebaseNotConfigured: return "Firebase is not configured."
+        }
+    }
+}
+
 @MainActor
 final class EntriesService {
     static let shared = EntriesService()
-
-    private var stubStore: [Entry] = []
-    private var stubListeners: [UUID: ([Entry]) -> Void] = [:]
-    private var stubPagedListeners: [UUID: ([Entry], DocumentSnapshot?) -> Void] = [:]
-    private var stubRangeListeners: [UUID: (from: Date, to: Date, cb: ([Entry]) -> Void)] = [:]
 
     private init() {}
 
@@ -16,14 +21,8 @@ final class EntriesService {
 
     func subscribeToToday(uid: String, onChange: @escaping ([Entry]) -> Void) -> () -> Void {
         guard FirebaseBootstrap.isConfigured else {
-            let token = UUID()
-            stubListeners[token] = onChange
-            onChange(sortedStubSnapshot())
-            return { [weak self] in
-                Task { @MainActor in
-                    self?.stubListeners.removeValue(forKey: token)
-                }
-            }
+            onChange([])
+            return {}
         }
 
         let collection = entriesCollection(uid: uid)
@@ -50,14 +49,8 @@ final class EntriesService {
                           to: Date,
                           onChange: @escaping ([Entry]) -> Void) -> () -> Void {
         guard FirebaseBootstrap.isConfigured else {
-            let token = UUID()
-            stubRangeListeners[token] = (from, to, onChange)
-            onChange(filteredStubRange(from: from, to: to))
-            return { [weak self] in
-                Task { @MainActor in
-                    self?.stubRangeListeners.removeValue(forKey: token)
-                }
-            }
+            onChange([])
+            return {}
         }
 
         let collection = entriesCollection(uid: uid)
@@ -81,14 +74,8 @@ final class EntriesService {
                             pageSize: Int,
                             onChange: @escaping ([Entry], DocumentSnapshot?) -> Void) -> () -> Void {
         guard FirebaseBootstrap.isConfigured else {
-            let token = UUID()
-            stubPagedListeners[token] = onChange
-            onChange(stubFirstPageSnapshot(pageSize: pageSize), nil)
-            return { [weak self] in
-                Task { @MainActor in
-                    self?.stubPagedListeners.removeValue(forKey: token)
-                }
-            }
+            onChange([], nil)
+            return {}
         }
 
         let collection = entriesCollection(uid: uid)
@@ -112,7 +99,7 @@ final class EntriesService {
         -> (entries: [Entry], lastCursor: DocumentSnapshot?, hasMore: Bool)
     {
         guard FirebaseBootstrap.isConfigured else {
-            return ([], nil, false)
+            throw EntriesServiceError.firebaseNotConfigured
         }
         guard let cursor else { return ([], nil, false) }
         let collection = entriesCollection(uid: uid)
@@ -133,7 +120,7 @@ final class EntriesService {
 
     func getEntry(uid: String, id: String) async throws -> Entry? {
         guard FirebaseBootstrap.isConfigured else {
-            return stubStore.first(where: { $0.id == id })
+            throw EntriesServiceError.firebaseNotConfigured
         }
         let collection = entriesCollection(uid: uid)
         let snapshot = try await collection.document(id).getDocument()
@@ -143,9 +130,7 @@ final class EntriesService {
 
     func getCapture(uid: String, captureId: String) async throws -> Capture? {
         guard FirebaseBootstrap.isConfigured else {
-            let blocks = stubStore.filter { $0.captureId == captureId || $0.id == captureId }
-            if blocks.isEmpty { return nil }
-            return Self.groupByCapture(blocks).first
+            throw EntriesServiceError.firebaseNotConfigured
         }
         let collection = entriesCollection(uid: uid)
 
@@ -178,33 +163,12 @@ final class EntriesService {
         guard !drafts.isEmpty else {
             throw CaptureError.emptyDrafts
         }
+        guard FirebaseBootstrap.isConfigured else {
+            throw EntriesServiceError.firebaseNotConfigured
+        }
 
         let captureId = Self.newCaptureId()
         let createdAt = Date()
-
-        guard FirebaseBootstrap.isConfigured else {
-            let baseTs = Int(Date().timeIntervalSince1970 * 1000)
-            var created: [Entry] = []
-            for (index, draft) in drafts.enumerated() {
-                let entry = Entry(
-                    id: "e\(baseTs)_\(index)",
-                    captureId: captureId,
-                    category: draft.category,
-                    note: draft.note,
-                    startTime: draft.startTime,
-                    endTime: draft.endTime,
-                    source: source,
-                    transcript: transcript,
-                    audioUrl: audioUrl,
-                    createdAt: createdAt
-                )
-                stubStore.append(entry)
-                created.append(entry)
-            }
-            emitStub()
-            return created
-        }
-
         let collection = entriesCollection(uid: uid)
         let db = collection.firestore
         let batch = db.batch()
@@ -212,7 +176,7 @@ final class EntriesService {
 
         for draft in drafts {
             let ref = collection.document()
-            var data: [String: Any] = [
+            let data: [String: Any] = [
                 "captureId": captureId,
                 "category": draft.category,
                 "note": draft.note,
@@ -223,7 +187,6 @@ final class EntriesService {
                 "transcript": transcript ?? NSNull(),
                 "audioUrl": audioUrl ?? NSNull(),
             ]
-            _ = data
             batch.setData(data, forDocument: ref)
             pending.append(
                 Entry(
@@ -252,17 +215,7 @@ final class EntriesService {
                      startTime: Date?,
                      endTime: Date?) async throws {
         guard FirebaseBootstrap.isConfigured else {
-            stubStore = stubStore.map { existing in
-                guard existing.id == id else { return existing }
-                var copy = existing
-                if let category { copy.category = category }
-                if let note { copy.note = note }
-                if let startTime { copy.startTime = startTime }
-                if let endTime { copy.endTime = endTime }
-                return copy
-            }
-            emitStub()
-            return
+            throw EntriesServiceError.firebaseNotConfigured
         }
 
         var update: [String: Any] = [:]
@@ -277,9 +230,7 @@ final class EntriesService {
 
     func deleteEntry(uid: String, id: String) async throws {
         guard FirebaseBootstrap.isConfigured else {
-            stubStore.removeAll { $0.id == id }
-            emitStub()
-            return
+            throw EntriesServiceError.firebaseNotConfigured
         }
         try await entriesCollection(uid: uid).document(id).delete()
     }
@@ -323,30 +274,6 @@ final class EntriesService {
 
     private func entriesCollection(uid: String) -> CollectionReference {
         Firestore.firestore().collection("users").document(uid).collection("entries")
-    }
-
-    private func sortedStubSnapshot() -> [Entry] {
-        stubStore.sorted { $0.startTime < $1.startTime }
-    }
-
-    private func stubFirstPageSnapshot(pageSize: Int) -> [Entry] {
-        Array(stubStore.sorted { $0.createdAt > $1.createdAt }.prefix(pageSize))
-    }
-
-    private func filteredStubRange(from: Date, to: Date) -> [Entry] {
-        sortedStubSnapshot().filter { $0.startTime >= from && $0.startTime <= to }
-    }
-
-    private func emitStub() {
-        let todaySnapshot = sortedStubSnapshot()
-        for listener in stubListeners.values { listener(todaySnapshot) }
-
-        for (_, paged) in stubPagedListeners {
-            paged(stubFirstPageSnapshot(pageSize: 50), nil)
-        }
-        for (_, entry) in stubRangeListeners {
-            entry.cb(filteredStubRange(from: entry.from, to: entry.to))
-        }
     }
 
     private static func newCaptureId() -> String {

@@ -5,19 +5,30 @@ import FirebaseAuth
 import GoogleSignIn
 import UIKit
 
+enum AuthServiceError: Error, LocalizedError {
+    case firebaseNotConfigured
+    case googleClientIDMissing
+    case missingIdentityToken
+    case unexpectedCredentialType
+    case userMappingFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .firebaseNotConfigured:  return "Firebase is not configured. Check the FIREBASE_* values in ios-swift/.env."
+        case .googleClientIDMissing:  return "GOOGLE_IOS_CLIENT_ID is not set."
+        case .missingIdentityToken:   return "Sign-in did not return an identity token."
+        case .unexpectedCredentialType: return "Unexpected Apple credential type."
+        case .userMappingFailed:      return "Couldn't read the signed-in user."
+        }
+    }
+}
+
 @MainActor
 final class AuthService: ObservableObject {
     static let shared = AuthService()
 
     @Published private(set) var currentUser: AppUser?
     @Published private(set) var isReady: Bool = false
-
-    private static let stubUser = AppUser(
-        uid: "stub-user",
-        email: "emma@cronwatch.app",
-        displayName: "Emma Mori",
-        photoURL: nil
-    )
 
     private var authStateHandle: AuthStateDidChangeListenerHandle?
     private var appleCoordinator: AppleSignInCoordinator?
@@ -42,9 +53,7 @@ final class AuthService: ObservableObject {
 
     func signInWithApple() async throws -> AppUser {
         guard FirebaseBootstrap.isConfigured else {
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            currentUser = Self.stubUser
-            return Self.stubUser
+            throw AuthServiceError.firebaseNotConfigured
         }
 
         let nonce = Self.randomNonce()
@@ -68,8 +77,7 @@ final class AuthService: ObservableObject {
 
         guard let identityTokenData = credential.identityToken,
               let identityToken = String(data: identityTokenData, encoding: .utf8) else {
-            throw NSError(domain: "AuthService", code: -1,
-                          userInfo: [NSLocalizedDescriptionKey: "Apple sign-in did not return an identity token."])
+            throw AuthServiceError.missingIdentityToken
         }
 
         let oauthCredential = OAuthProvider.appleCredential(
@@ -79,43 +87,43 @@ final class AuthService: ObservableObject {
         )
 
         let result = try await Auth.auth().signIn(with: oauthCredential)
-        let appUser = Self.toAppUser(result.user) ?? Self.stubUser
+        guard let appUser = Self.toAppUser(result.user) else {
+            throw AuthServiceError.userMappingFailed
+        }
         currentUser = appUser
         return appUser
     }
 
     func signInWithGoogle(presenting viewController: UIViewController) async throws -> AppUser {
-        guard FirebaseBootstrap.isConfigured, let clientID = AppEnvironment.googleIOSClientID else {
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            currentUser = Self.stubUser
-            return Self.stubUser
+        guard FirebaseBootstrap.isConfigured else {
+            throw AuthServiceError.firebaseNotConfigured
+        }
+        guard let clientID = AppEnvironment.googleIOSClientID else {
+            throw AuthServiceError.googleClientIDMissing
         }
 
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
 
         let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: viewController)
         guard let idToken = result.user.idToken?.tokenString else {
-            throw NSError(domain: "AuthService", code: -2,
-                          userInfo: [NSLocalizedDescriptionKey: "Google sign-in did not return an ID token."])
+            throw AuthServiceError.missingIdentityToken
         }
         let accessToken = result.user.accessToken.tokenString
         let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
         let authResult = try await Auth.auth().signIn(with: credential)
-        let appUser = Self.toAppUser(authResult.user) ?? Self.stubUser
+        guard let appUser = Self.toAppUser(authResult.user) else {
+            throw AuthServiceError.userMappingFailed
+        }
         currentUser = appUser
         return appUser
     }
 
     func signOut() async {
-        // Always safe to call, even if user never went through Google flow.
         GIDSignIn.sharedInstance.signOut()
         if FirebaseBootstrap.isConfigured {
             try? Auth.auth().signOut()
-            // The auth state listener will null out currentUser; do it eagerly too.
-            currentUser = nil
-        } else {
-            currentUser = nil
         }
+        currentUser = nil
     }
 
     func idToken() async -> String? {
@@ -176,8 +184,7 @@ private final class AppleSignInCoordinator: NSObject,
     func authorizationController(controller: ASAuthorizationController,
                                  didCompleteWithAuthorization authorization: ASAuthorization) {
         guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
-            continuation?.resume(throwing: NSError(domain: "AuthService", code: -3,
-                userInfo: [NSLocalizedDescriptionKey: "Unexpected Apple credential type."]))
+            continuation?.resume(throwing: AuthServiceError.unexpectedCredentialType)
             continuation = nil
             return
         }
@@ -192,7 +199,6 @@ private final class AppleSignInCoordinator: NSObject,
     }
 
     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-        // Find the first foreground active scene's key window; fall back to a fresh window.
         let scenes = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .filter { $0.activationState == .foregroundActive }

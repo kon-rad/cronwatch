@@ -125,7 +125,7 @@ struct EntriesListView: View {
 
     private func startSubscription() {
         cancelSubscription?()
-        let uid = auth.currentUser?.uid ?? "stub-user"
+        guard let uid = auth.currentUser?.uid else { return }
         let cancel = EntriesService.shared.subscribeFirstPage(
             uid: uid,
             pageSize: pageSize
@@ -158,7 +158,7 @@ struct EntriesListView: View {
         loadMoreError = nil
         defer { loadingMore = false }
 
-        let uid = auth.currentUser?.uid ?? "stub-user"
+        guard let uid = auth.currentUser?.uid else { return }
         do {
             let result = try await EntriesService.shared.loadMore(
                 uid: uid,

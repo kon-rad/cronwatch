@@ -60,7 +60,7 @@ struct OverviewView: View {
     }
 
     private func startSubscriptions() {
-        let uid = auth.currentUser?.uid ?? "stub-user"
+        guard let uid = auth.currentUser?.uid else { return }
 
         cancelToday?()
         cancelToday = EntriesService.shared.subscribeToToday(uid: uid) { entries in

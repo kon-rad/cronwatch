@@ -260,9 +260,12 @@ struct CaptureView: View {
         let trimmed = typed.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         phase = .savingText
+        guard let uid = auth.currentUser?.uid else {
+            phase = .idle
+            return
+        }
         do {
             let drafts = try await CaptureService.structureText(trimmed)
-            let uid = auth.currentUser?.uid ?? "stub-user"
             _ = try await EntriesService.shared.createCaptureEntries(
                 uid: uid,
                 drafts: drafts,

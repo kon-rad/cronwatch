@@ -35,20 +35,7 @@ enum CaptureService {
 
     static func capture(audioURL: URL, now: Date = Date()) async throws -> CaptureResult {
         guard let proxy = AppEnvironment.captureProxyURL else {
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            return CaptureResult(
-                transcript: "deep work on the auth refactor from 9 to 10:30",
-                audioUrl: "",
-                audioKey: "",
-                drafts: [
-                    CapturedEntryDraft(
-                        category: "deep",
-                        note: "auth refactor",
-                        startTime: now,
-                        endTime: now.addingTimeInterval(90 * 60)
-                    )
-                ]
-            )
+            throw CaptureError.proxyURLMissing
         }
 
         let token = try await requireIdToken()
@@ -113,15 +100,7 @@ enum CaptureService {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard let proxy = AppEnvironment.captureProxyURL else {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            return [
-                CapturedEntryDraft(
-                    category: "deep",
-                    note: trimmed,
-                    startTime: now,
-                    endTime: now
-                )
-            ]
+            throw CaptureError.proxyURLMissing
         }
 
         let token = try await requireIdToken()

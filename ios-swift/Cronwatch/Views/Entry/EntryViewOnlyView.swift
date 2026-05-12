@@ -126,7 +126,10 @@ struct EntryViewOnlyView: View {
     }
 
     private func loadCapture() async {
-        let uid = auth.currentUser?.uid ?? "stub-user"
+        guard let uid = auth.currentUser?.uid else {
+            notFound = true
+            return
+        }
         do {
             if let result = try await EntriesService.shared.getCapture(uid: uid, captureId: captureId) {
                 capture = result

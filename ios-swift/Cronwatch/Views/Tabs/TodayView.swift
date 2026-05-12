@@ -15,7 +15,7 @@ struct TodayView: View {
             }
         }
         .onAppear {
-            let uid = auth.currentUser?.uid ?? "stub-user"
+            guard let uid = auth.currentUser?.uid else { return }
             cancel = EntriesService.shared.subscribeToToday(uid: uid) { newEntries in
                 entries = newEntries
             }

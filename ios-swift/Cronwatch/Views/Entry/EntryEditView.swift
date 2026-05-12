@@ -15,7 +15,7 @@ struct EntryEditView: View {
     @State private var cancel: (() -> Void)? = nil
     @State private var showDeleteAlert = false
 
-    private var uid: String { auth.currentUser?.uid ?? "stub-user" }
+    private var uid: String? { auth.currentUser?.uid }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -202,6 +202,7 @@ struct EntryEditView: View {
 
     private func subscribe() {
         cancel?()
+        guard let uid else { return }
         cancel = EntriesService.shared.subscribeToToday(uid: uid) { entries in
             if entry == nil, let found = entries.first(where: { $0.id == entryID }) {
                 entry = found
@@ -214,7 +215,7 @@ struct EntryEditView: View {
     }
 
     private func onSave() async {
-        guard let entry else { return }
+        guard let entry, let uid else { return }
         let baseDate = entry.startTime
         let start = TimeUtils.date(baseDate, withMinutesOfDay: startMin)
         let end = TimeUtils.date(baseDate, withMinutesOfDay: max(endMin, startMin + 15))
@@ -236,7 +237,7 @@ struct EntryEditView: View {
     }
 
     private func onDelete() async {
-        guard let entry else { return }
+        guard let entry, let uid else { return }
         do {
             try await EntriesService.shared.deleteEntry(uid: uid, id: entry.id)
             dismiss()
