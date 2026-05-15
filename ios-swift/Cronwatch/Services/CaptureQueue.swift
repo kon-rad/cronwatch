@@ -1,11 +1,17 @@
 import Foundation
 
-enum CaptureJobStatus: Equatable { case queued, running, error }
+enum CaptureJobStatus: String, Equatable, Codable {
+    case queued, running, awaitingConfirmation, error
+}
 
-struct CaptureJob: Identifiable, Equatable {
+struct CaptureJob: Identifiable, Equatable, Codable {
     let id: String
     let uid: String
-    let audioURL: URL
+    let audioURL: URL?
+    var transcript: String?
+    var remoteAudioUrl: String?
+    var entryDrafts: [CapturedEntryDraft]?
+    var plan: ResolutionPlan?
     var status: CaptureJobStatus
     var error: String?
     let createdAt: Date
@@ -19,23 +25,59 @@ final class CaptureQueue: ObservableObject {
 
     private var working = false
 
-    private init() {}
+    private init() {
+        loadFromDisk()
+    }
 
     // MARK: - Public API
 
     @discardableResult
-    func enqueue(uid: String, audioURL: URL) -> String {
+    func enqueue(uid: String,
+                 audioURL: URL,
+                 transcript: String? = nil,
+                 remoteAudioUrl: String? = nil,
+                 entryDrafts: [CapturedEntryDraft]? = nil,
+                 initialStatus: CaptureJobStatus = .queued,
+                 error: String? = nil) -> String {
         let id = Self.newJobId()
         let storedURL = (try? Self.persistAudio(jobId: id, sourceURL: audioURL)) ?? audioURL
         let job = CaptureJob(
             id: id,
             uid: uid,
             audioURL: storedURL,
+            transcript: transcript,
+            remoteAudioUrl: remoteAudioUrl,
+            entryDrafts: entryDrafts,
+            plan: nil,
+            status: initialStatus,
+            error: error,
+            createdAt: Date()
+        )
+        jobs.append(job)
+        saveToDisk()
+        if initialStatus == .queued {
+            Task { await tick() }
+        }
+        return id
+    }
+
+    @discardableResult
+    func enqueueText(uid: String, transcript: String) -> String {
+        let id = Self.newJobId()
+        let job = CaptureJob(
+            id: id,
+            uid: uid,
+            audioURL: nil,
+            transcript: transcript,
+            remoteAudioUrl: nil,
+            entryDrafts: nil,
+            plan: nil,
             status: .queued,
             error: nil,
             createdAt: Date()
         )
         jobs.append(job)
+        saveToDisk()
         Task { await tick() }
         return id
     }
@@ -43,9 +85,62 @@ final class CaptureQueue: ObservableObject {
     func retry(jobId: String) {
         guard let index = jobs.firstIndex(where: { $0.id == jobId }) else { return }
         guard jobs[index].status == .error else { return }
+        if jobs[index].plan != nil {
+            // Commit-time failure: re-surface the sheet so the user re-confirms
+            // against the current state, rather than silently retrying.
+            jobs[index].status = .awaitingConfirmation
+            jobs[index].error = nil
+            saveToDisk()
+            return
+        }
         jobs[index].status = .queued
         jobs[index].error = nil
+        saveToDisk()
         Task { await tick() }
+    }
+
+    func confirmPlan(jobId: String) {
+        guard let index = jobs.firstIndex(where: { $0.id == jobId }) else { return }
+        guard jobs[index].status == .awaitingConfirmation else { return }
+        guard let plan = jobs[index].plan else { return }
+        jobs[index].status = .running
+        jobs[index].error = nil
+        saveToDisk()
+        let job = jobs[index]
+        Task { [weak self] in
+            do {
+                _ = try await EntriesService.shared.commitResolutionPlan(uid: job.uid, plan: plan)
+                await self?.finalizeCommit(jobId: job.id)
+            } catch {
+                await self?.failCommit(jobId: job.id, message: error.localizedDescription)
+            }
+        }
+    }
+
+    func discardPlan(jobId: String) {
+        guard let index = jobs.firstIndex(where: { $0.id == jobId }) else { return }
+        guard jobs[index].status == .awaitingConfirmation else { return }
+        if let audioURL = jobs[index].audioURL {
+            Self.deleteAudio(audioURL)
+        }
+        jobs.remove(at: index)
+        saveToDisk()
+    }
+
+    @MainActor private func finalizeCommit(jobId: String) {
+        guard let index = jobs.firstIndex(where: { $0.id == jobId }) else { return }
+        if let audioURL = jobs[index].audioURL {
+            Self.deleteAudio(audioURL)
+        }
+        jobs.remove(at: index)
+        saveToDisk()
+    }
+
+    @MainActor private func failCommit(jobId: String, message: String) {
+        guard let index = jobs.firstIndex(where: { $0.id == jobId }) else { return }
+        jobs[index].status = .error
+        jobs[index].error = message
+        saveToDisk()
     }
 
     func retryAll() {
@@ -55,21 +150,49 @@ final class CaptureQueue: ObservableObject {
             jobs[index].error = nil
             changed = true
         }
-        if changed { Task { await tick() } }
+        if changed {
+            saveToDisk()
+            Task { await tick() }
+        }
     }
 
     func discard(jobId: String) {
         guard let index = jobs.firstIndex(where: { $0.id == jobId }) else { return }
-        Self.deleteAudio(jobs[index].audioURL)
+        if let audioURL = jobs[index].audioURL {
+            Self.deleteAudio(audioURL)
+        }
         jobs.remove(at: index)
+        saveToDisk()
+    }
+
+    func update(jobId: String,
+                transcript: String?? = nil,
+                entryDrafts: [CapturedEntryDraft]?? = nil,
+                remoteAudioUrl: String?? = nil,
+                status: CaptureJobStatus? = nil,
+                error: String?? = nil) {
+        guard let index = jobs.firstIndex(where: { $0.id == jobId }) else { return }
+        if let transcript { jobs[index].transcript = transcript }
+        if let entryDrafts { jobs[index].entryDrafts = entryDrafts }
+        if let remoteAudioUrl { jobs[index].remoteAudioUrl = remoteAudioUrl }
+        if let status { jobs[index].status = status }
+        if let error { jobs[index].error = error }
+        saveToDisk()
+    }
+
+    func job(id: String) -> CaptureJob? {
+        jobs.first(where: { $0.id == id })
     }
 
     static func cleanupOrphans() {
         let fm = FileManager.default
         guard let dir = capturesDirectory() else { return }
         guard let contents = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
-        for url in contents {
-            try? fm.removeItem(at: url)
+        let referenced = Set(loadJobsFromDisk().compactMap { $0.audioURL?.lastPathComponent })
+        for url in contents where url.lastPathComponent != metadataFilename {
+            if !referenced.contains(url.lastPathComponent) {
+                try? fm.removeItem(at: url)
+            }
         }
     }
 
@@ -81,6 +204,7 @@ final class CaptureQueue: ObservableObject {
         working = true
         jobs[index].status = .running
         jobs[index].error = nil
+        saveToDisk()
 
         let job = jobs[index]
         let outcome = await processJob(job)
@@ -94,27 +218,138 @@ final class CaptureQueue: ObservableObject {
 
     private enum JobOutcome {
         case success
+        case awaiting(plan: ResolutionPlan,
+                      transcript: String?,
+                      remoteAudioUrl: String?,
+                      entryDrafts: [CapturedEntryDraft]?)
+        case partial(transcript: String?, remoteAudioUrl: String?, entryDrafts: [CapturedEntryDraft]?, error: String)
         case failure(String)
     }
 
     private func processJob(_ job: CaptureJob) async -> JobOutcome {
-        do {
-            let result = try await CaptureService.capture(audioURL: job.audioURL)
-            guard let activeUid = AuthService.shared.currentUser?.uid, activeUid == job.uid else {
-                return .failure("Signed out")
+        guard let activeUid = AuthService.shared.currentUser?.uid, activeUid == job.uid else {
+            return .failure("Signed out")
+        }
+
+        // Resume from the latest unfinished step.
+        var transcript = job.transcript
+        var remoteAudioUrl = job.remoteAudioUrl
+        var entryDrafts = job.entryDrafts
+
+        if entryDrafts == nil {
+            if transcript == nil {
+                // Need to transcribe via /capture (also returns structured drafts).
+                guard let audioURL = job.audioURL else {
+                    return .failure("Missing audio for transcription.")
+                }
+                do {
+                    let result = try await CaptureService.capture(audioURL: audioURL)
+                    transcript = result.transcript
+                    remoteAudioUrl = result.audioUrl
+                    entryDrafts = result.drafts
+                } catch let error as CaptureError {
+                    return .partial(
+                        transcript: transcript,
+                        remoteAudioUrl: remoteAudioUrl,
+                        entryDrafts: entryDrafts,
+                        error: error.localizedDescription
+                    )
+                } catch {
+                    return .partial(
+                        transcript: transcript,
+                        remoteAudioUrl: remoteAudioUrl,
+                        entryDrafts: entryDrafts,
+                        error: error.localizedDescription
+                    )
+                }
+            } else {
+                // Have transcript, need to structure it.
+                do {
+                    entryDrafts = try await CaptureService.structureText(transcript ?? "")
+                } catch let error as CaptureError {
+                    return .partial(
+                        transcript: transcript,
+                        remoteAudioUrl: remoteAudioUrl,
+                        entryDrafts: entryDrafts,
+                        error: error.localizedDescription
+                    )
+                } catch {
+                    return .partial(
+                        transcript: transcript,
+                        remoteAudioUrl: remoteAudioUrl,
+                        entryDrafts: entryDrafts,
+                        error: error.localizedDescription
+                    )
+                }
             }
-            _ = try await EntriesService.shared.createCaptureEntries(
-                uid: job.uid,
-                drafts: result.drafts,
-                source: .voice,
-                transcript: result.transcript.isEmpty ? nil : result.transcript,
-                audioUrl: result.audioUrl.isEmpty ? nil : result.audioUrl
+        }
+
+        guard let drafts = entryDrafts, !drafts.isEmpty else {
+            return .partial(
+                transcript: transcript,
+                remoteAudioUrl: remoteAudioUrl,
+                entryDrafts: entryDrafts,
+                error: "Empty draft."
             )
-            return .success
-        } catch let error as CaptureError {
-            return .failure(error.localizedDescription)
+        }
+
+        let source: EntrySource = job.audioURL != nil ? .voice : .text
+        let snapped = EntriesService.snapAndDeoverlap(drafts)
+        guard !snapped.isEmpty else {
+            return .partial(
+                transcript: transcript,
+                remoteAudioUrl: remoteAudioUrl,
+                entryDrafts: entryDrafts,
+                error: "Empty draft."
+            )
+        }
+        let windowStart = snapped.map(\.startTime).min() ?? Date()
+        let windowEnd = snapped.map(\.endTime).max() ?? windowStart
+
+        let existing: [Entry]
+        do {
+            existing = try await EntriesService.shared.fetchConflicts(
+                uid: job.uid,
+                windowStart: windowStart,
+                windowEnd: windowEnd
+            )
         } catch {
-            return .failure(error.localizedDescription)
+            return .partial(
+                transcript: transcript,
+                remoteAudioUrl: remoteAudioUrl,
+                entryDrafts: entryDrafts,
+                error: "Couldn't check for conflicts."
+            )
+        }
+
+        let plan = EntriesService.buildResolutionPlan(
+            existing: existing,
+            drafts: snapped,
+            captureId: job.id,
+            source: source,
+            transcript: (transcript?.isEmpty == false) ? transcript : nil,
+            audioUrl: (remoteAudioUrl?.isEmpty == false) ? remoteAudioUrl : nil
+        )
+
+        if plan.hasConflicts {
+            return .awaiting(
+                plan: plan,
+                transcript: transcript,
+                remoteAudioUrl: remoteAudioUrl,
+                entryDrafts: entryDrafts
+            )
+        }
+
+        do {
+            _ = try await EntriesService.shared.commitResolutionPlan(uid: job.uid, plan: plan)
+            return .success
+        } catch {
+            return .partial(
+                transcript: transcript,
+                remoteAudioUrl: remoteAudioUrl,
+                entryDrafts: entryDrafts,
+                error: error.localizedDescription
+            )
         }
     }
 
@@ -122,15 +357,33 @@ final class CaptureQueue: ObservableObject {
         guard let index = jobs.firstIndex(where: { $0.id == jobId }) else { return }
         switch outcome {
         case .success:
-            Self.deleteAudio(jobs[index].audioURL)
+            if let audioURL = jobs[index].audioURL {
+                Self.deleteAudio(audioURL)
+            }
             jobs.remove(at: index)
+        case .awaiting(let plan, let transcript, let remoteAudioUrl, let entryDrafts):
+            if let transcript { jobs[index].transcript = transcript }
+            if let remoteAudioUrl { jobs[index].remoteAudioUrl = remoteAudioUrl }
+            if let entryDrafts { jobs[index].entryDrafts = entryDrafts }
+            jobs[index].plan = plan
+            jobs[index].status = .awaitingConfirmation
+            jobs[index].error = nil
+        case .partial(let transcript, let remoteAudioUrl, let entryDrafts, let message):
+            if let transcript { jobs[index].transcript = transcript }
+            if let remoteAudioUrl { jobs[index].remoteAudioUrl = remoteAudioUrl }
+            if let entryDrafts { jobs[index].entryDrafts = entryDrafts }
+            jobs[index].status = .error
+            jobs[index].error = message
         case .failure(let message):
             jobs[index].status = .error
             jobs[index].error = message
         }
+        saveToDisk()
     }
 
-    // MARK: - File helpers
+    // MARK: - Persistence
+
+    private static let metadataFilename = "drafts.json"
 
     private static func capturesDirectory() -> URL? {
         let fm = FileManager.default
@@ -144,6 +397,10 @@ final class CaptureQueue: ObservableObject {
         return dir
     }
 
+    private static func metadataURL() -> URL? {
+        capturesDirectory()?.appendingPathComponent(metadataFilename)
+    }
+
     private static func persistAudio(jobId: String, sourceURL: URL) throws -> URL {
         let fm = FileManager.default
         guard let dir = capturesDirectory() else { return sourceURL }
@@ -152,7 +409,14 @@ final class CaptureQueue: ObservableObject {
         if fm.fileExists(atPath: destination.path) {
             try? fm.removeItem(at: destination)
         }
-        try fm.copyItem(at: sourceURL, to: destination)
+        if sourceURL == destination {
+            return destination
+        }
+        if sourceURL.path.hasPrefix(dir.path) {
+            try fm.moveItem(at: sourceURL, to: destination)
+        } else {
+            try fm.copyItem(at: sourceURL, to: destination)
+        }
         return destination
     }
 
@@ -164,5 +428,40 @@ final class CaptureQueue: ObservableObject {
         let ms = Int(Date().timeIntervalSince1970 * 1000)
         let suffix = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(5).lowercased())
         return "j_\(ms)_\(suffix)"
+    }
+
+    private func saveToDisk() {
+        guard let url = Self.metadataURL() else { return }
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(jobs)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // Persistence failure isn't fatal; in-memory state stays correct.
+        }
+    }
+
+    private func loadFromDisk() {
+        let loaded = Self.loadJobsFromDisk()
+        // Any job that was "running" mid-process when the app died is reset to "error" so the user can decide.
+        jobs = loaded.map { job in
+            var copy = job
+            if copy.status == .running {
+                copy.status = .error
+                copy.error = copy.error ?? "Interrupted."
+            }
+            return copy
+        }
+    }
+
+    fileprivate static func loadJobsFromDisk() -> [CaptureJob] {
+        guard let url = metadataURL() else { return [] }
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return [] }
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode([CaptureJob].self, from: data)) ?? []
     }
 }
