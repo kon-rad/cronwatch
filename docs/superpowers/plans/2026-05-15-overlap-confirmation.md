@@ -63,7 +63,7 @@ xcodegen generate
 xcodebuild test \
   -project Cronwatch.xcodeproj \
   -scheme Cronwatch \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   -only-testing:CronwatchTests/PlaceholderTests \
   | tail -30
 ```
@@ -137,7 +137,7 @@ struct ResolutionPlan: Equatable, Codable {
 cd ios-swift && xcodegen generate && xcodebuild build \
   -project Cronwatch.xcodeproj \
   -scheme Cronwatch \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   -configuration Debug \
   | tail -20
 ```
@@ -336,7 +336,7 @@ final class ResolutionPlanTests: XCTestCase {
 cd ios-swift && xcodebuild test \
   -project Cronwatch.xcodeproj \
   -scheme Cronwatch \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   -only-testing:CronwatchTests/ResolutionPlanTests \
   | tail -40
 ```
@@ -552,7 +552,7 @@ In `EntriesService.swift`, delete this block:
 cd ios-swift && xcodebuild test \
   -project Cronwatch.xcodeproj \
   -scheme Cronwatch \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   -only-testing:CronwatchTests/ResolutionPlanTests \
   | tail -40
 ```
@@ -565,7 +565,7 @@ Expected: all 12 tests pass.
 cd ios-swift && xcodebuild build \
   -project Cronwatch.xcodeproj \
   -scheme Cronwatch \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   -configuration Debug \
   | tail -20
 ```
@@ -650,7 +650,7 @@ Add this method in the `// MARK: - Writes` section of `EntriesService`, immediat
 cd ios-swift && xcodegen generate && xcodebuild build \
   -project Cronwatch.xcodeproj \
   -scheme Cronwatch \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   -configuration Debug \
   | tail -20
 ```
@@ -754,7 +754,7 @@ Inside `enqueueText(uid:transcript:)`, same change after `entryDrafts: nil,`:
 cd ios-swift && xcodebuild build \
   -project Cronwatch.xcodeproj \
   -scheme Cronwatch \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   -configuration Debug \
   | tail -10
 ```
@@ -941,7 +941,7 @@ And in `applyOutcome`, add a new case before `.partial`:
 cd ios-swift && xcodebuild build \
   -project Cronwatch.xcodeproj \
   -scheme Cronwatch \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   -configuration Debug \
   | tail -20
 ```
@@ -1043,7 +1043,7 @@ In `CaptureQueue.retry(jobId:)`, immediately after the existing guard:
 cd ios-swift && xcodebuild build \
   -project Cronwatch.xcodeproj \
   -scheme Cronwatch \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   -configuration Debug \
   | tail -10
 ```
@@ -1124,7 +1124,7 @@ struct PendingConfirmation: Identifiable, Equatable {
 cd ios-swift && xcodegen generate && xcodebuild build \
   -project Cronwatch.xcodeproj \
   -scheme Cronwatch \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   -configuration Debug \
   | tail -10
 ```
@@ -1244,7 +1244,7 @@ final class CaptureQueueToastBridge: ObservableObject {
 cd ios-swift && xcodebuild build \
   -project Cronwatch.xcodeproj \
   -scheme Cronwatch \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   -configuration Debug \
   | tail -10
 ```
@@ -1401,7 +1401,7 @@ If `.cwTitle` doesn't exist, replace it in the sheet with whatever the project u
 cd ios-swift && xcodegen generate && xcodebuild build \
   -project Cronwatch.xcodeproj \
   -scheme Cronwatch \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   -configuration Debug \
   | tail -10
 ```
@@ -1480,7 +1480,7 @@ struct CronwatchApp: App {
 cd ios-swift && xcodebuild build \
   -project Cronwatch.xcodeproj \
   -scheme Cronwatch \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   -configuration Debug \
   | tail -10
 ```
@@ -1556,7 +1556,7 @@ cd ios-swift && xcodegen generate
 xcodebuild build \
   -project Cronwatch.xcodeproj \
   -scheme Cronwatch \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
   -configuration Debug \
   | tail -10
 ```
