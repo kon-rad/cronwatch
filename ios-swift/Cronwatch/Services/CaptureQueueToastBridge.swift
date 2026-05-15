@@ -1,9 +1,12 @@
 import Combine
 import Foundation
 
+private enum StickyKind { case processing, needsReview }
+
 @MainActor
 final class CaptureQueueToastBridge: ObservableObject {
     private var stickyId: String?
+    private var lastStickyKind: StickyKind?
     private var lastStatus: [String: CaptureJobStatus] = [:]
     private var lastKnownIds: Set<String> = []
     private var cancellable: AnyCancellable?
@@ -20,12 +23,36 @@ final class CaptureQueueToastBridge: ObservableObject {
 
     private func process(jobs: [CaptureJob], toasts: ToastCenter) {
         let active = jobs.contains(where: { $0.status == .queued || $0.status == .running })
-        if active && stickyId == nil {
-            stickyId = toasts.show(message: "Processing entry…", kind: .info, duration: nil)
-        }
-        if !active, let id = stickyId {
+        let awaiting = jobs.first(where: { $0.status == .awaitingConfirmation })
+
+        if let awaiting {
+            if stickyId == nil || lastStickyKind != .needsReview {
+                if let id = stickyId { toasts.dismiss(id) }
+                let jobId = awaiting.id
+                let plan = awaiting.plan
+                stickyId = toasts.show(
+                    message: "1 entry needs your review — tap to resolve.",
+                    kind: .info,
+                    duration: nil,
+                    action: .init(label: "Review") {
+                        Task { @MainActor in
+                            guard let plan else { return }
+                            ConflictPresenter.shared.activeJob = PendingConfirmation(jobId: jobId, plan: plan)
+                        }
+                    }
+                )
+                lastStickyKind = .needsReview
+            }
+        } else if active {
+            if stickyId == nil || lastStickyKind != .processing {
+                if let id = stickyId { toasts.dismiss(id) }
+                stickyId = toasts.show(message: "Processing entry…", kind: .info, duration: nil)
+                lastStickyKind = .processing
+            }
+        } else if let id = stickyId {
             toasts.dismiss(id)
             stickyId = nil
+            lastStickyKind = nil
         }
 
         let currentIds = Set(jobs.map(\.id))
