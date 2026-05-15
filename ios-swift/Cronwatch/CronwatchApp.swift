@@ -10,6 +10,7 @@ struct CronwatchApp: App {
     @StateObject private var toasts = ToastCenter.shared
     @StateObject private var queue = CaptureQueue.shared
     @StateObject private var bridge = CaptureQueueToastBridge()
+    @StateObject private var conflicts = ConflictPresenter.shared
 
     var body: some Scene {
         WindowGroup {
@@ -25,6 +26,21 @@ struct CronwatchApp: App {
             .tint(Palette.amber)
             .onAppear {
                 bridge.observe(queue: queue, toasts: toasts)
+                conflicts.observe(queue: queue)
+            }
+            .sheet(item: $conflicts.activeJob) { pending in
+                ConflictConfirmationSheet(
+                    pending: pending,
+                    onReplace: {
+                        CaptureQueue.shared.confirmPlan(jobId: pending.jobId)
+                        conflicts.dismiss()
+                    },
+                    onDiscard: {
+                        CaptureQueue.shared.discardPlan(jobId: pending.jobId)
+                        conflicts.dismiss()
+                    }
+                )
+                .presentationDetents([.medium, .large])
             }
         }
     }
