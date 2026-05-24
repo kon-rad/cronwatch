@@ -31,7 +31,12 @@ struct ProfileView: View {
                     if let uid = auth.currentUser?.uid {
                         ProfileReportsSection(uid: uid, goals: userSettings.goals
                             .filter { $0.isSet }
-                            .map { "\(Categories.label(for: $0.category)): \(Int($0.weeklyTargetHours))h/week" })
+                            .map { goal -> String in
+                                let hrs = goal.weeklyTargetHours.truncatingRemainder(dividingBy: 1) == 0
+                                    ? "\(Int(goal.weeklyTargetHours))h"
+                                    : String(format: "%.1fh", goal.weeklyTargetHours)
+                                return "\(Categories.label(for: goal.category)): \(hrs)/week"
+                            })
                     }
 
                     SectionView(label: "ACCOUNT") {
