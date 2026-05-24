@@ -22,6 +22,7 @@ struct DashboardHeroCard: View {
                 goalsSection(setGoals)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.md)
         .background(Palette.white)
         .clipShape(RoundedRectangle(cornerRadius: Radius.md))
@@ -178,8 +179,7 @@ struct DashboardHeroCard: View {
     private func progressLabel(logged: Int, target: Int) -> String {
         let loggedH = logged / 60
         let loggedM = logged % 60
-        let targetH = target / 60
         let loggedStr = loggedM > 0 ? "\(loggedH)h \(loggedM)m" : "\(loggedH)h"
-        return "\(loggedStr) / \(targetH)h"
+        return "\(loggedStr) / \(TimeUtils.formatDuration(target))"
     }
 }
