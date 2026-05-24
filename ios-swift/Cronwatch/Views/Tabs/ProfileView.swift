@@ -3,12 +3,18 @@ import SwiftUI
 struct ProfileView: View {
     @EnvironmentObject var auth: AuthService
     @EnvironmentObject var rc: RevenueCatService
+    @Environment(\.openURL) private var openURL
 
     @State private var showPaywall = false
     @State private var showSignOutAlert = false
     @State private var showDeleteAlert = false
+    @State private var userSettings: UserSettings = .empty
+    @State private var goalsUnsubscribe: (() -> Void)?
 
     private let appVersion = "1.0.0"
+    private let githubURL = URL(string: "https://github.com/kon-rad/cronwatch")!
+    private let privacyURL = URL(string: "https://cronwatch.xyz/privacy")!
+    private let termsURL = URL(string: "https://cronwatch.xyz/terms")!
 
     var body: some View {
         ZStack {
@@ -20,6 +26,12 @@ struct ProfileView: View {
 
                     SectionView(label: "SUBSCRIPTION") {
                         subscriptionCard
+                    }
+
+                    if let uid = auth.currentUser?.uid {
+                        ProfileReportsSection(uid: uid, goals: userSettings.goals
+                            .filter { $0.isSet }
+                            .map { "\(Categories.label(for: $0.category)): \(Int($0.weeklyTargetHours))h/week" })
                     }
 
                     SectionView(label: "ACCOUNT") {
@@ -40,9 +52,15 @@ struct ProfileView: View {
                                     .font(.cwBody)
                                     .foregroundStyle(Palette.muted)
                             ))
-                            RowView(label: "Source on GitHub", isFirst: false)
-                            RowView(label: "Privacy", isFirst: false)
-                            RowView(label: "Terms", isFirst: false)
+                            RowView(label: "Source on GitHub", isFirst: false) {
+                                openURL(githubURL)
+                            }
+                            RowView(label: "Privacy", isFirst: false) {
+                                openURL(privacyURL)
+                            }
+                            RowView(label: "Terms", isFirst: false) {
+                                openURL(termsURL)
+                            }
                         }
                     }
 
@@ -65,6 +83,14 @@ struct ProfileView: View {
         .task {
             _ = await rc.refreshEntitlement()
         }
+        .onAppear { subscribeToGoals() }
+        .onDisappear {
+            goalsUnsubscribe?()
+            goalsUnsubscribe = nil
+        }
+        .onChange(of: auth.currentUser?.uid) { _, _ in
+            subscribeToGoals()
+        }
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
@@ -81,6 +107,18 @@ struct ProfileView: View {
             }
         } message: {
             Text("This permanently removes your entries. This cannot be undone.")
+        }
+    }
+
+    private func subscribeToGoals() {
+        goalsUnsubscribe?()
+        goalsUnsubscribe = nil
+        guard let uid = auth.currentUser?.uid else {
+            userSettings = .empty
+            return
+        }
+        goalsUnsubscribe = UserSettingsService.shared.subscribe(uid: uid) { settings in
+            self.userSettings = settings
         }
     }
 

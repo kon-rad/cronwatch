@@ -1,15 +1,59 @@
 import SwiftUI
 
+private enum OverviewPeriod: CaseIterable {
+    case today, thisWeek, thisMonth, allTime
+
+    var label: String {
+        switch self {
+        case .today:     return "TODAY"
+        case .thisWeek:  return "THIS WEEK"
+        case .thisMonth: return "THIS MONTH"
+        case .allTime:   return "ALL TIME"
+        }
+    }
+
+    var shortLabel: String {
+        switch self {
+        case .today:     return "Today"
+        case .thisWeek:  return "This Week"
+        case .thisMonth: return "This Month"
+        case .allTime:   return "All Time"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .today:     return "tracked of 24h"
+        case .thisWeek:  return "tracked this week"
+        case .thisMonth: return "tracked this month"
+        case .allTime:   return "tracked total"
+        }
+    }
+}
+
 struct OverviewView: View {
     @EnvironmentObject var auth: AuthService
 
     @State private var todayEntries: [Entry] = []
     @State private var rangeEntries: [Entry] = []
+    @State private var allTimeEntries: [Entry] = []
     @State private var cancelToday: (() -> Void)?
     @State private var cancelRange: (() -> Void)?
+    @State private var cancelAllTime: (() -> Void)?
+
+    @State private var settings: UserSettings = .empty
+    @State private var cancelSettings: (() -> Void)?
+    @State private var showGoalsEditor: Bool = false
+
+    @State private var showWeekReport: Bool = false
+    @State private var reportCooldownUntil: Date = .distantPast
+
+    @State private var selectedPeriod: OverviewPeriod = .today
+    @State private var dayTick: Date = Date()
 
     private let streakDays = 21
     private let weeklyDays = 7
+    private let bestsDays = 90
 
     var body: some View {
         ZStack {
@@ -17,6 +61,14 @@ struct OverviewView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    DashboardHeroCard(
+                        todayEntries: todayEntries,
+                        rangeEntries: rangeEntries,
+                        goals: settings.goals,
+                        onEdit: { showGoalsEditor = true }
+                    )
+                    .padding(.bottom, Spacing.md)
+
                     Text("Overview")
                         .font(.cwTitle)
                         .foregroundStyle(Palette.ink)
@@ -28,6 +80,9 @@ struct OverviewView: View {
 
                     donutCard
                         .padding(.top, Spacing.md)
+
+                    periodTabs
+                        .padding(.top, Spacing.sm)
 
                     weeklyHeader
                         .padding(.top, Spacing.lg)
@@ -43,6 +98,15 @@ struct OverviewView: View {
 
                     streakCard
                         .padding(.top, Spacing.sm)
+
+                    monthHeader
+                        .padding(.top, Spacing.lg)
+                        .padding(.bottom, Spacing.sm)
+
+                    MonthlyHeatmapView(entries: rangeEntries)
+
+                    PersonalBestsView(entries: rangeEntries, windowDays: bestsDays)
+                        .padding(.top, Spacing.lg)
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.top, Spacing.md)
@@ -56,11 +120,56 @@ struct OverviewView: View {
         .onDisappear {
             cancelToday?(); cancelToday = nil
             cancelRange?(); cancelRange = nil
+            cancelSettings?(); cancelSettings = nil
+            cancelAllTime?(); cancelAllTime = nil
+        }
+        .onChange(of: selectedPeriod) { _, newPeriod in
+            if newPeriod == .allTime {
+                startAllTimeSubscription()
+            } else {
+                cancelAllTime?(); cancelAllTime = nil
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+            dayTick = Date()
+            startSubscriptions()
+        }
+        .sheet(isPresented: $showGoalsEditor) {
+            if let uid = auth.currentUser?.uid {
+                GoalsEditorView(uid: uid, initial: settings) {
+                    showGoalsEditor = false
+                }
+            }
+        }
+        .sheet(isPresented: $showWeekReport) {
+            let (start, end) = weekReportRange()
+            let goalDescriptions = settings.goals
+                .filter { $0.isSet }
+                .map { goal -> String in
+                    let label = Categories.label(for: goal.category)
+                    let hrs = goal.weeklyTargetHours.truncatingRemainder(dividingBy: 1) == 0
+                        ? "\(Int(goal.weeklyTargetHours))h"
+                        : String(format: "%.1fh", goal.weeklyTargetHours)
+                    return "\(label): \(hrs)/week"
+                }
+            WeekReportView(
+                goals: goalDescriptions,
+                days: WeekReportAggregator.aggregate(entries: rangeEntries, now: dayTick),
+                weekStart: start,
+                weekEnd: end
+            ) {
+                showWeekReport = false
+            }
         }
     }
 
     private func startSubscriptions() {
         guard let uid = auth.currentUser?.uid else { return }
+
+        cancelSettings?()
+        cancelSettings = UserSettingsService.shared.subscribe(uid: uid) { newSettings in
+            settings = newSettings
+        }
 
         cancelToday?()
         cancelToday = EntriesService.shared.subscribeToToday(uid: uid) { entries in
@@ -71,19 +180,85 @@ struct OverviewView: View {
         let now = Date()
         let calendar = Calendar.current
         let todayStart = calendar.startOfDay(for: now)
-        let windowStart = calendar.date(byAdding: .day, value: -(streakDays - 1), to: todayStart) ?? todayStart
+        // Range must cover: streak (21d), weekly avg (7d), monthly heatmap
+        // (start of current month) and personal bests (90d). Take the
+        // earliest of these as the lower bound.
+        let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? todayStart
+        let bestsStart = calendar.date(byAdding: .day, value: -(bestsDays - 1), to: todayStart) ?? todayStart
+        let windowStart = min(monthStart, bestsStart)
         let windowEnd = TimeUtils.endOfToday(now)
         cancelRange = EntriesService.shared.subscribeToRange(uid: uid, from: windowStart, to: windowEnd) { entries in
             rangeEntries = entries
         }
     }
 
+    private func startAllTimeSubscription() {
+        guard let uid = auth.currentUser?.uid else { return }
+        cancelAllTime?()
+        let origin = Calendar.current.date(from: DateComponents(year: 2020, month: 1, day: 1)) ?? Date()
+        cancelAllTime = EntriesService.shared.subscribeToRange(uid: uid, from: origin, to: Date.distantFuture) { entries in
+            allTimeEntries = entries
+        }
+    }
+
     // MARK: - Donut card
+
+    private var entriesForPeriod: [Entry] {
+        let cal = Calendar.current
+        switch selectedPeriod {
+        case .today:
+            return todayEntries
+        case .thisWeek:
+            let todayStart = cal.startOfDay(for: dayTick)
+            let weekStart = cal.date(byAdding: .day, value: -6, to: todayStart) ?? todayStart
+            return rangeEntries.filter { $0.startTime >= weekStart }
+        case .thisMonth:
+            let monthStart = cal.date(from: cal.dateComponents([.year, .month], from: dayTick)) ?? cal.startOfDay(for: dayTick)
+            return rangeEntries.filter { $0.startTime >= monthStart }
+        case .allTime:
+            return allTimeEntries
+        }
+    }
+
+    private func cyclePeriod(forward: Bool) {
+        let all = OverviewPeriod.allCases
+        guard let idx = all.firstIndex(of: selectedPeriod) else { return }
+        let next = forward ? (idx + 1) % all.count : (idx - 1 + all.count) % all.count
+        selectedPeriod = all[next]
+    }
+
+    private var periodTabs: some View {
+        HStack(spacing: Spacing.xs) {
+            ForEach(OverviewPeriod.allCases, id: \.self) { period in
+                Button {
+                    selectedPeriod = period
+                } label: {
+                    Text(period.shortLabel)
+                        .font(.cwCaption)
+                        .tracking(0.4)
+                        .foregroundStyle(selectedPeriod == period ? Palette.ink : Palette.muted)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, 6)
+                        .background(selectedPeriod == period ? Palette.white : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.sm)
+                                .stroke(selectedPeriod == period ? Palette.border : Color.clear, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, Spacing.xs)
+        .padding(.vertical, Spacing.xs)
+        .background(Palette.borderSoft)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+    }
 
     private var slices: [(category: String, minutes: Int)] {
         var map: [String: Int] = [:]
         var order: [String] = []
-        for entry in todayEntries {
+        for entry in entriesForPeriod {
             if map[entry.category] == nil { order.append(entry.category) }
             map[entry.category, default: 0] += TimeUtils.entryDurationMin(entry)
         }
@@ -91,7 +266,7 @@ struct OverviewView: View {
     }
 
     private var trackedMin: Int { slices.reduce(0) { $0 + $1.minutes } }
-    private var distinct: Int { Set(todayEntries.map(\.category)).count }
+    private var distinct: Int { Set(entriesForPeriod.map(\.category)).count }
     private var topSlice: (category: String, minutes: Int)? {
         slices.sorted { $0.minutes > $1.minutes }.first
     }
@@ -114,15 +289,16 @@ struct OverviewView: View {
             .frame(width: 120, height: 120)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("TODAY")
+                Text(selectedPeriod.label)
                     .font(.cwCaption)
                     .tracking(1)
                     .foregroundStyle(Palette.muted)
+
                 Text(TimeUtils.formatDuration(trackedMin))
                     .font(.system(size: 28, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(Palette.ink)
-                Text("tracked of 24h")
+                Text(selectedPeriod.subtitle)
                     .font(.cwCaption)
                     .foregroundStyle(Palette.muted)
                     .padding(.top, 2)
@@ -155,7 +331,7 @@ struct OverviewView: View {
     // MARK: - Weekly average
 
     private var weeklyRows: [(category: String, minutes: Int)] {
-        Streak.weeklyAverage(entries: rangeEntries, days: weeklyDays)
+        Streak.weeklyAverage(entries: rangeEntries, days: weeklyDays, now: dayTick)
     }
 
     private var weeklyTotalMin: Int { weeklyRows.reduce(0) { $0 + $1.minutes } }
@@ -170,6 +346,45 @@ struct OverviewView: View {
             Text("\(weeklyTotalMin / 60)h/day")
                 .font(.cwCaption)
                 .monospacedDigit()
+                .foregroundStyle(Palette.muted)
+        }
+    }
+
+    // MARK: - Month / bests headers
+
+    private var monthTotalHours: Int {
+        MonthlyStats.monthDays(entries: rangeEntries).reduce(0) { $0 + $1.totalMin } / 60
+    }
+
+    private var monthLabel: String {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM"
+        return f.string(from: Date()).uppercased()
+    }
+
+    private var monthHeader: some View {
+        HStack {
+            Text(monthLabel)
+                .font(.cwCaption)
+                .tracking(1.2)
+                .foregroundStyle(Palette.muted)
+            Spacer()
+            Text("\(monthTotalHours)h tracked")
+                .font(.cwCaption)
+                .monospacedDigit()
+                .foregroundStyle(Palette.muted)
+        }
+    }
+
+    private var bestsHeader: some View {
+        HStack {
+            Text("PERSONAL BESTS")
+                .font(.cwCaption)
+                .tracking(1.2)
+                .foregroundStyle(Palette.muted)
+            Spacer()
+            Text("last \(bestsDays) days")
+                .font(.cwCaption)
                 .foregroundStyle(Palette.muted)
         }
     }
@@ -198,11 +413,19 @@ struct OverviewView: View {
     // MARK: - Streak card
 
     private var dayFlags: [Bool] {
-        Streak.computeDayFlags(entries: rangeEntries, days: streakDays)
+        Streak.computeDayFlags(entries: rangeEntries, days: streakDays, now: dayTick)
     }
 
     private var streak: Int {
         Streak.currentStreak(from: dayFlags)
+    }
+
+    private var weekReportEligible: Bool {
+        streak >= 7 && settings.hasAnyGoal
+    }
+
+    private var weekReportButtonEnabled: Bool {
+        Date() >= reportCooldownUntil
     }
 
     private var streakCard: some View {
@@ -221,13 +444,47 @@ struct OverviewView: View {
             }
             HStack(spacing: 3) {
                 ForEach(flags.indices, id: \.self) { index in
+                    let isToday = index == flags.count - 1
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(flags[index] ? Palette.amber : Palette.border)
+                        .fill(isToday ? Color.clear : (flags[index] ? Palette.amber : Palette.border))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(isToday ? Palette.amber : Color.clear, lineWidth: 1.5)
+                        )
                         .frame(maxWidth: .infinity)
                         .frame(height: 28)
                 }
             }
             .padding(.top, Spacing.sm)
+
+            if weekReportEligible {
+                Button(action: openWeekReport) {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "sparkles")
+                        Text("Generate week report")
+                            .fontWeight(.semibold)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .opacity(0.7)
+                    }
+                    .font(.cwBody)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, 12)
+                    .background(Palette.amber)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                    .opacity(weekReportButtonEnabled ? 1.0 : 0.6)
+                }
+                .buttonStyle(.plain)
+                .disabled(!weekReportButtonEnabled)
+                .padding(.top, Spacing.md)
+            } else if streak >= 7 && !settings.hasAnyGoal {
+                Text("Set your goals to unlock your weekly report.")
+                    .font(.cwCaption)
+                    .foregroundStyle(Palette.muted)
+                    .padding(.top, Spacing.md)
+            }
         }
         .padding(Spacing.md)
         .background(Palette.white)
@@ -236,6 +493,20 @@ struct OverviewView: View {
             RoundedRectangle(cornerRadius: Radius.md)
                 .stroke(Palette.border, lineWidth: 1)
         )
+    }
+
+    private func openWeekReport() {
+        guard weekReportButtonEnabled else { return }
+        reportCooldownUntil = Date().addingTimeInterval(10)
+        showWeekReport = true
+    }
+
+    private func weekReportRange() -> (Date, Date) {
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: dayTick)
+        let weekEnd = cal.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
+        let weekStart = cal.date(byAdding: .day, value: -6, to: todayStart) ?? todayStart
+        return (weekStart, weekEnd)
     }
 }
 
