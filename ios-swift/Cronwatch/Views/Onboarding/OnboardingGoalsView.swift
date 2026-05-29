@@ -15,11 +15,16 @@ struct OnboardingGoalsView: View {
             onBack: onBack,
             onContinue: onNext
         ) {
-            VStack(spacing: Spacing.md) {
-                ForEach(0..<3, id: \.self) { index in
-                    goalSlot(index: index)
+            ScrollView {
+                VStack(spacing: Spacing.md) {
+                    ForEach(0..<3, id: \.self) { index in
+                        if index < goals.count {
+                            goalSlot(index: index)
+                        }
+                    }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
         }
     }
 

@@ -7,6 +7,9 @@ struct OnboardingVisionView: View {
     let onBack: () -> Void
     let onNext: () -> Void
 
+    private enum Field { case years3, years5, years10 }
+    @FocusState private var focusedField: Field?
+
     var body: some View {
         OnboardingStepLayout(
             headline: "Where are you headed?",
@@ -16,14 +19,14 @@ struct OnboardingVisionView: View {
             onContinue: onNext
         ) {
             VStack(spacing: Spacing.md) {
-                visionField(label: "In 3 years, I want to be…", value: $years3)
-                visionField(label: "In 5 years, I want to be…", value: $years5)
-                visionField(label: "In 10 years, I want to be…", value: $years10)
+                visionField(label: "In 3 years, I want to be…", value: $years3, field: .years3, next: .years5)
+                visionField(label: "In 5 years, I want to be…", value: $years5, field: .years5, next: .years10)
+                visionField(label: "In 10 years, I want to be…", value: $years10, field: .years10, next: nil)
             }
         }
     }
 
-    private func visionField(label: String, value: Binding<String>) -> some View {
+    private func visionField(label: String, value: Binding<String>, field: Field, next: Field?) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(label)
                 .font(.cwCaption)
@@ -36,9 +39,13 @@ struct OnboardingVisionView: View {
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md))
                 .overlay(
                     RoundedRectangle(cornerRadius: Radius.md)
-                        .stroke(Palette.border, lineWidth: 1)
+                        .stroke(focusedField == field ? Palette.amber : Palette.border, lineWidth: 1)
                 )
-                .submitLabel(.next)
+                .focused($focusedField, equals: field)
+                .submitLabel(next != nil ? .next : .done)
+                .onSubmit {
+                    if let next { focusedField = next } else { focusedField = nil }
+                }
         }
     }
 }

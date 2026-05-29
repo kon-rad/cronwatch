@@ -27,6 +27,9 @@ struct OnboardingWorkTypeView: View {
                 )
                 .focused($focused)
                 .submitLabel(.done)
+                .onSubmit {
+                    if !value.trimmingCharacters(in: .whitespaces).isEmpty { onNext() }
+                }
                 .onAppear { focused = true }
         }
     }
