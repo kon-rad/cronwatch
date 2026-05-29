@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="cw_bg">#FAFAF7</color>
+    <color name="cw_ink">#111111</color>
+    <color name="cw_amber">#E8A33D</color>
+    <color name="cw_white">#FFFFFF</color>
+
+    <color name="ic_launcher_background">#FAFAF7</color>
+</resources>

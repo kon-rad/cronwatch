@@ -1,0 +1,13 @@
+[
+  { "key": "work", "label": "Work" },
+  { "key": "deep", "label": "Deep" },
+  { "key": "meeting", "label": "Meeting" },
+  { "key": "study", "label": "Study" },
+  { "key": "exercise", "label": "Exercise" },
+  { "key": "sleep", "label": "Sleep" },
+  { "key": "meal", "label": "Meal" },
+  { "key": "break", "label": "Break" },
+  { "key": "commute", "label": "Commute" },
+  { "key": "entertain", "label": "Entertain" },
+  { "key": "personal", "label": "Personal" }
+]

@@ -24,14 +24,6 @@ export const env = {
     privateKey: optional('FIREBASE_PRIVATE_KEY').replace(/\\n/g, '\n'),
   },
 
-  aws: {
-    region: required('AWS_REGION'),
-    accessKeyId: required('AWS_ACCESS_KEY_ID'),
-    secretAccessKey: required('AWS_SECRET_ACCESS_KEY'),
-    bucket: required('S3_BUCKET'),
-    keyPrefix: optional('S3_KEY_PREFIX', 'captures'),
-  },
-
   deepgram: {
     apiKey: required('DEEPGRAM_API_KEY'),
     model: optional('DEEPGRAM_MODEL', 'nova-3'),
@@ -40,5 +32,7 @@ export const env = {
   together: {
     apiKey: required('TOGETHER_API_KEY'),
     model: optional('TOGETHER_MODEL', 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo'),
+    // Larger, better-value model used for long-form HTML reports.
+    reportModel: optional('TOGETHER_REPORT_MODEL', 'meta-llama/Llama-3.3-70B-Instruct-Turbo'),
   },
 };

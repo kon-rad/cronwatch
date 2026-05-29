@@ -6,6 +6,9 @@
 .deploy.env.*
 !.deploy.env.example
 
+scratch.md
+
+
 # Firebase admin SDK service account keys
 *-firebase-adminsdk-*.json
 serviceAccount*.json
@@ -34,9 +37,6 @@ web-build/
 expo-env.d.ts
 *.tsbuildinfo
 
-# --- Native (Expo prebuild) ---
-client/ios/
-client/android/
 .kotlin/
 *.orig.*
 
@@ -55,3 +55,4 @@ yarn-error.*
 # --- Tooling state ---
 .claude/scheduled_tasks.lock
 .claude/**/state.json
+.gstack/

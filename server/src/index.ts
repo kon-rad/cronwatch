@@ -3,9 +3,10 @@ import cors from 'cors';
 import multer from 'multer';
 import { env } from './env';
 import { requireFirebaseUser, type AuthedRequest } from './auth';
-import { uploadAudio } from './s3';
 import { transcribe } from './deepgram';
 import { structure } from './together';
+import { weekReportHandler } from './weekReport';
+import { profileReportHandler } from './profileReport';
 
 const app = express();
 
@@ -15,7 +16,7 @@ app.use(
     origin: allowed.length === 1 && allowed[0] === '*' ? true : allowed,
   }),
 );
-app.use(express.json({ limit: '64kb' }));
+app.use(express.json({ limit: '256kb' }));
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
@@ -58,18 +59,14 @@ app.post(
     const contentType = file.mimetype || 'audio/m4a';
 
     try {
-      const [{ key, url }, transcript] = await Promise.all([
-        uploadAudio(uid, file.buffer, contentType, ext),
-        transcribe(file.buffer),
-      ]);
+      console.log('[capture] uid=%s bytes=%d mime=%s ext=%s', uid, file.size, contentType, ext);
+      const transcript = await transcribe(file.buffer, contentType);
 
-      const draft = await structure(transcript, now, tz);
+      const drafts = await structure(transcript, now, tz);
 
       res.json({
         transcript,
-        audioKey: key,
-        audioUrl: url,
-        draft,
+        drafts,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Capture failed';
@@ -111,8 +108,8 @@ app.post(
       : undefined;
 
     try {
-      const draft = await structure(transcript, now, tz);
-      res.json({ draft });
+      const drafts = await structure(transcript, now, tz);
+      res.json({ drafts });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Structure failed';
       console.error('[structure] error:', err);
@@ -130,6 +127,9 @@ function mimeToExt(mime: string | undefined): string | null {
   if (mime.includes('mpeg') || mime.includes('mp3')) return 'mp3';
   return null;
 }
+
+app.post('/week-report', requireFirebaseUser, weekReportHandler);
+app.post('/profile-report', requireFirebaseUser, profileReportHandler);
 
 app.listen(env.port, () => {
   console.log(`[cronwatch-server] listening on :${env.port}`);

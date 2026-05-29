@@ -11,7 +11,6 @@ struct Entry: Identifiable, Hashable, Codable {
     var endTime: Date
     var source: EntrySource
     var transcript: String?
-    var audioUrl: String?
     let createdAt: Date
 }
 
@@ -26,7 +25,6 @@ struct Capture: Identifiable, Equatable {
     let captureId: String
     let source: EntrySource
     var transcript: String?
-    var audioUrl: String?
     let createdAt: Date
     var blocks: [Entry]
 

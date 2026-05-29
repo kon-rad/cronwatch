@@ -1,6 +1,10 @@
 import SwiftUI
 import UIKit
 
+private enum EntryEditField: Hashable {
+    case start, end, note
+}
+
 struct EntryEditView: View {
     let entryID: String
 
@@ -10,10 +14,12 @@ struct EntryEditView: View {
     @State private var entry: Entry?
     @State private var category: String = ""
     @State private var note: String = ""
+    @State private var entryDate: Date = Date()
     @State private var startMin: Int = 0
     @State private var endMin: Int = 0
-    @State private var cancel: (() -> Void)? = nil
+    @State private var didLoad = false
     @State private var showDeleteAlert = false
+    @FocusState private var focusedField: EntryEditField?
 
     private var uid: String? { auth.currentUser?.uid }
 
@@ -28,9 +34,13 @@ struct EntryEditView: View {
 
             if entry == nil {
                 Spacer()
-                Text("Entry not found.")
-                    .font(.cwCaption)
-                    .foregroundColor(Palette.muted)
+                if didLoad {
+                    Text("Entry not found.")
+                        .font(.cwCaption)
+                        .foregroundColor(Palette.muted)
+                } else {
+                    ProgressView()
+                }
                 Spacer()
             } else {
                 ScrollView {
@@ -39,6 +49,7 @@ struct EntryEditView: View {
                         chipGrid
                         sectionLabel("NOTE")
                         noteField
+                        dateRow
                         timeRow
                         deleteButton
                     }
@@ -46,12 +57,28 @@ struct EntryEditView: View {
                     .padding(.top, Spacing.md)
                     .padding(.bottom, Spacing.xl * 2)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
         }
         .background(Palette.bg)
         .clipShape(RoundedCornersEntry(radius: 20, corners: [.topLeft, .topRight]))
-        .onAppear { subscribe() }
-        .onDisappear { cancel?() }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { focusedField = nil }
+            }
+        }
+        .task { await loadEntry() }
+        .onChange(of: startMin) { _, newStart in
+            if newStart >= endMin {
+                endMin = min(24 * 60, newStart + 15)
+            }
+        }
+        .onChange(of: endMin) { _, newEnd in
+            if newEnd <= startMin {
+                endMin = min(24 * 60, startMin + 15)
+            }
+        }
         .alert("Delete entry?", isPresented: $showDeleteAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) { Task { await onDelete() } }
@@ -134,6 +161,8 @@ struct EntryEditView: View {
                 .font(.cwBody)
                 .foregroundColor(Palette.ink)
                 .scrollContentBackground(.hidden)
+                .scrollDismissesKeyboard(.interactively)
+                .focused($focusedField, equals: .note)
                 .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, Spacing.xs)
                 .frame(minHeight: 72)
@@ -155,24 +184,59 @@ struct EntryEditView: View {
         }
     }
 
+    private var dateRow: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("DATE")
+            HStack {
+                Text(weekdayLabel)
+                    .font(.cwBody)
+                    .foregroundColor(Palette.muted)
+                Spacer()
+                DatePicker("", selection: $entryDate, displayedComponents: .date)
+                    .datePickerStyle(.compact)
+                    .labelsHidden()
+                    .tint(Palette.amber)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 10)
+            .background(Palette.white)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md)
+                    .stroke(Palette.border, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+        }
+    }
+
+    private var weekdayLabel: String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE"
+        return f.string(from: entryDate)
+    }
+
     private var timeRow: some View {
         HStack(spacing: Spacing.md) {
             TimeStepper(
                 label: "START",
-                value: TimeUtils.formatTimeOfDay(startMin),
+                minutes: $startMin,
+                focused: $focusedField,
+                field: .start,
+                minBound: 0,
+                maxBound: 24 * 60 - 1,
                 onMinus: {
-                    let next = TimeUtils.snapTo15(max(0, startMin - 15))
-                    startMin = next
+                    startMin = TimeUtils.snapTo15(max(0, startMin - 15))
                 },
                 onPlus: {
-                    let next = TimeUtils.snapTo15(min(24 * 60 - 15, startMin + 15))
-                    startMin = next
-                    if next >= endMin { endMin = next + 15 }
+                    startMin = TimeUtils.snapTo15(min(24 * 60 - 15, startMin + 15))
                 }
             )
             TimeStepper(
                 label: "END",
-                value: TimeUtils.formatTimeOfDay(endMin),
+                minutes: $endMin,
+                focused: $focusedField,
+                field: .end,
+                minBound: 1,
+                maxBound: 24 * 60,
                 onMinus: {
                     endMin = TimeUtils.snapTo15(max(startMin + 15, endMin - 15))
                 },
@@ -200,25 +264,24 @@ struct EntryEditView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func subscribe() {
-        cancel?()
-        guard let uid else { return }
-        cancel = EntriesService.shared.subscribeToToday(uid: uid) { entries in
-            if entry == nil, let found = entries.first(where: { $0.id == entryID }) {
-                entry = found
-                category = found.category
-                note = found.note
-                startMin = TimeUtils.minutesOfDay(of: found.startTime)
-                endMin = TimeUtils.minutesOfDay(of: found.endTime)
-            }
+    private func loadEntry() async {
+        guard entry == nil, let uid else { return }
+        let found = try? await EntriesService.shared.getEntry(uid: uid, id: entryID)
+        if let found {
+            entry = found
+            category = found.category
+            note = found.note
+            entryDate = found.startTime
+            startMin = TimeUtils.minutesOfDay(of: found.startTime)
+            endMin = TimeUtils.minutesOfDay(of: found.endTime)
         }
+        didLoad = true
     }
 
     private func onSave() async {
         guard let entry, let uid else { return }
-        let baseDate = entry.startTime
-        let start = TimeUtils.date(baseDate, withMinutesOfDay: startMin)
-        let end = TimeUtils.date(baseDate, withMinutesOfDay: max(endMin, startMin + 15))
+        let start = TimeUtils.date(entryDate, withMinutesOfDay: startMin)
+        let end = TimeUtils.date(entryDate, withMinutesOfDay: max(endMin, startMin + 15))
         let trimmedCategory = category.trimmingCharacters(in: .whitespaces)
         let nextCategory = trimmedCategory.isEmpty ? entry.category : trimmedCategory
         do {
@@ -249,9 +312,17 @@ struct EntryEditView: View {
 
 private struct TimeStepper: View {
     let label: String
-    let value: String
+    @Binding var minutes: Int
+    @FocusState.Binding var focused: EntryEditField?
+    let field: EntryEditField
+    let minBound: Int
+    let maxBound: Int
     let onMinus: () -> Void
     let onPlus: () -> Void
+
+    @State private var textValue: String = ""
+
+    private var isFocused: Bool { focused == field }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -262,11 +333,33 @@ private struct TimeStepper: View {
                 .padding(.bottom, 4)
 
             HStack(spacing: Spacing.xs) {
-                Text(value)
+                TextField("", text: $textValue)
+                    .keyboardType(.numberPad)
+                    .focused($focused, equals: field)
                     .font(.cwBody)
                     .foregroundColor(Palette.ink)
                     .monospacedDigit()
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .onAppear {
+                        textValue = TimeUtils.formatTimeOfDay(minutes)
+                    }
+                    .onChange(of: isFocused) { _, nowFocused in
+                        if nowFocused {
+                            textValue = Self.digits(from: minutes)
+                            DispatchQueue.main.async {
+                                UIApplication.shared
+                                    .sendAction(#selector(UIResponder.selectAll(_:)),
+                                                to: nil, from: nil, for: nil)
+                            }
+                        } else {
+                            commit()
+                        }
+                    }
+                    .onChange(of: minutes) { _, _ in
+                        if !isFocused {
+                            textValue = TimeUtils.formatTimeOfDay(minutes)
+                        }
+                    }
 
                 Button(action: onMinus) {
                     Image(systemName: "minus")
@@ -293,11 +386,40 @@ private struct TimeStepper: View {
             .background(Palette.white)
             .overlay(
                 RoundedRectangle(cornerRadius: Radius.md)
-                    .stroke(Palette.border, lineWidth: 1)
+                    .stroke(isFocused ? Palette.amber : Palette.border, lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: Radius.md))
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private static func digits(from m: Int) -> String {
+        let h = (m / 60) % 24
+        let mn = m % 60
+        return String(format: "%02d%02d", h, mn)
+    }
+
+    private func commit() {
+        let digits = textValue.filter(\.isNumber)
+        if let parsed = Self.parse(digits) {
+            minutes = max(minBound, min(maxBound, parsed))
+        }
+        textValue = TimeUtils.formatTimeOfDay(minutes)
+    }
+
+    private static func parse(_ digits: String) -> Int? {
+        guard !digits.isEmpty else { return nil }
+        if digits.count <= 2 {
+            guard let h = Int(digits), h >= 0, h <= 23 else { return nil }
+            return h * 60
+        }
+        let padded = String(repeating: "0", count: max(0, 4 - digits.count)) + digits
+        let last4 = String(padded.suffix(4))
+        let hStr = String(last4.prefix(2))
+        let mStr = String(last4.suffix(2))
+        guard let h = Int(hStr), let mn = Int(mStr),
+              (0...23).contains(h), (0...59).contains(mn) else { return nil }
+        return h * 60 + mn
     }
 }
 

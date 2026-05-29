@@ -9,7 +9,6 @@ struct CategoryDef: Hashable {
 enum Categories {
     static let all: [CategoryDef] = [
         .init(key: "work",      label: "Work",      color: Color(hex: "#3D6F8E")),
-        .init(key: "deep",      label: "Deep",      color: Color(hex: "#4F7A6A")),
         .init(key: "meeting",   label: "Meeting",   color: Color(hex: "#B07845")),
         .init(key: "study",     label: "Study",     color: Color(hex: "#8A6FA3")),
         .init(key: "exercise",  label: "Exercise",  color: Color(hex: "#C8412C")),

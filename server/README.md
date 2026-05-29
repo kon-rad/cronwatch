@@ -13,21 +13,19 @@ Response:
 ```json
 {
   "transcript": "deep work on the auth refactor from 9 to 10:30",
-  "audioKey":   "captures/<uid>/2026-05-07/<uuid>.m4a",
-  "audioUrl":   "https://<bucket>.s3.<region>.amazonaws.com/<key>",
-  "draft": {
+  "drafts": [{
     "category":  "deep",
     "note":      "Auth refactor",
     "startTime": "2026-05-07T09:00:00.000Z",
     "endTime":   "2026-05-07T10:30:00.000Z"
-  }
+  }]
 }
 ```
 
 The proxy:
 
 1. Verifies the Firebase ID token (`firebase-admin`).
-2. Uploads the raw audio to S3 *and* sends it to Deepgram in parallel.
+2. Sends the raw audio to Deepgram for transcription.
 3. Sends the transcript to Together AI with a strict system prompt; parses + validates the JSON.
 
 Secrets never leave the server — the mobile app only knows the proxy URL.
@@ -38,7 +36,7 @@ Secrets never leave the server — the mobile app only knows the proxy URL.
 
 ```sh
 cp .env.example .env
-# fill in AWS, Deepgram, Together, Firebase secrets
+# fill in Deepgram, Together, Firebase secrets
 npm install
 npm run dev    # tsx watch on :8080
 ```
@@ -103,22 +101,3 @@ work with App Platform. Push this folder to a git repo, create an app from
 it, and add the same secrets via the App Platform env panel.
 
 ---
-
-## AWS S3 setup
-
-The server uploads with `PutObject`. The IAM user needs at minimum:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": ["s3:PutObject"],
-    "Resource": "arn:aws:s3:::<your-bucket>/*"
-  }]
-}
-```
-
-Bucket can be private; the client never reads back the audio in the current
-flow — `audioUrl` is stored on the entry as a reference. If you later want
-playback in-app, switch to presigned GETs.

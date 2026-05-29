@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TodayGridView: View {
     let entries: [Entry]
+    var anchorDate: Date = Date()
 
     static let pxPerMin: CGFloat = 1.4
     static let hourPx: CGFloat = 60 * 1.4
@@ -16,6 +17,10 @@ struct TodayGridView: View {
     @State private var didInitialScroll = false
 
     private var dayHeight: CGFloat { 24 * Self.hourPx }
+
+    private var isToday: Bool {
+        Calendar.current.isDateInToday(anchorDate)
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -49,6 +54,7 @@ struct TodayGridView: View {
             .onAppear {
                 guard !didInitialScroll else { return }
                 didInitialScroll = true
+                guard isToday else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                     withAnimation(.none) {
                         proxy.scrollTo("now", anchor: .top)
@@ -78,25 +84,40 @@ struct TodayGridView: View {
                         .position(x: width / 2, y: CGFloat(q) * 15 * Self.pxPerMin + 0.5)
                 }
 
-                // Entries
+                // Entries — single column. Each block occupies exactly its
+                // duration's worth of vertical space, so an entry can never
+                // visually overlap a neighbour that starts when it ends.
                 ForEach(entries) { entry in
-                    entryBlock(for: entry, width: width)
+                    if let c = TimeUtils.clipMinutesOfDay(entry, day: anchorDate) {
+                        entryBlock(
+                            for: entry,
+                            startMin: c.startMin,
+                            endMin: c.endMin,
+                            width: width
+                        )
+                    }
                 }
 
-                // Now line + dot
-                nowLine(width: width)
-                    .id("now")
+                // Now line + dot (only when viewing today)
+                if isToday {
+                    nowLine(width: width)
+                        .id("now")
+                }
             }
             .frame(width: width, height: dayHeight, alignment: .topLeading)
         }
         .frame(height: dayHeight)
     }
 
-    private func entryBlock(for entry: Entry, width: CGFloat) -> some View {
-        let startMin = TimeUtils.minutesSinceMidnight(entry.startTime)
-        let durMin = TimeUtils.entryDurationMin(entry)
+    private func entryBlock(
+        for entry: Entry,
+        startMin: Int,
+        endMin: Int,
+        width: CGFloat
+    ) -> some View {
+        let durMin = max(15, endMin - startMin)
         let top = CGFloat(startMin) * Self.pxPerMin
-        let height = max(28, CGFloat(durMin) * Self.pxPerMin - 2)
+        let height = CGFloat(durMin) * Self.pxPerMin - 2
         let bg = Categories.pillBackground(for: entry.category)
         let leftInset: CGFloat = Spacing.sm
         let rightInset: CGFloat = Spacing.xs
@@ -135,7 +156,7 @@ struct TodayGridView: View {
                 }
             }
             .padding(.horizontal, Spacing.sm)
-            .padding(.vertical, 6)
+            .padding(.vertical, 2)
             .frame(width: blockWidth, height: height, alignment: .topLeading)
             .background(bg)
             .clipShape(RoundedRectangle(cornerRadius: Radius.md))

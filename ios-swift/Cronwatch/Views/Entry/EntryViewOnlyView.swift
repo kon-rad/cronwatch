@@ -5,9 +5,6 @@ struct EntryViewOnlyView: View {
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var auth: AuthService
-    @EnvironmentObject var toasts: ToastCenter
-
-    @StateObject private var audio = AudioPlayerService()
 
     @State private var capture: Capture?
     @State private var notFound = false
@@ -37,9 +34,6 @@ struct EntryViewOnlyView: View {
         }
         .background(Palette.bg)
         .task { await loadCapture() }
-        .onDisappear {
-            audio.stop()
-        }
     }
 
     private var header: some View {
@@ -59,18 +53,7 @@ struct EntryViewOnlyView: View {
 
             Spacer()
 
-            if showPlayButton {
-                Button(action: togglePlay) {
-                    Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 18, weight: .regular))
-                        .foregroundColor(Palette.amber)
-                        .frame(width: 32, height: 32)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(audio.isPlaying ? "Pause" : "Play")
-            } else {
-                Color.clear.frame(width: 32, height: 32)
-            }
+            Color.clear.frame(width: 32, height: 32)
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
@@ -120,11 +103,6 @@ struct EntryViewOnlyView: View {
         return capture.blocks.count > 1 ? "Capture" : "Entry"
     }
 
-    private var showPlayButton: Bool {
-        guard let url = capture?.audioUrl, !url.isEmpty else { return false }
-        return true
-    }
-
     private func loadCapture() async {
         guard let uid = auth.currentUser?.uid else {
             notFound = true
@@ -133,28 +111,12 @@ struct EntryViewOnlyView: View {
         do {
             if let result = try await EntriesService.shared.getCapture(uid: uid, captureId: captureId) {
                 capture = result
-                if let url = result.audioUrl, !url.isEmpty {
-                    _ = audio.load(urlString: url)
-                }
             } else {
                 notFound = true
             }
         } catch {
             notFound = true
         }
-    }
-
-    private func togglePlay() {
-        guard let url = capture?.audioUrl, !url.isEmpty else { return }
-        if audio.isPlaying {
-            audio.pause()
-            return
-        }
-        if !audio.load(urlString: url) {
-            toasts.show(message: "Couldn't play audio", kind: .error, duration: 3)
-            return
-        }
-        audio.play()
     }
 
     private func formatLongDate(_ date: Date) -> String {

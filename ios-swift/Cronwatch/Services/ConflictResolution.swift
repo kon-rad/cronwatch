@@ -19,7 +19,6 @@ struct Resolution: Equatable, Codable {
     let category: String
     let note: String
     let transcript: String?
-    let audioUrl: String?
     let captureId: String
     let action: ConflictAction
 }
@@ -28,7 +27,6 @@ struct ResolutionPlan: Equatable, Codable {
     let captureId: String
     let source: EntrySource
     let transcript: String?
-    let audioUrl: String?
     let drafts: [CapturedEntryDraft]
     let resolutions: [Resolution]
 

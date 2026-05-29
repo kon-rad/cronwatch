@@ -127,26 +127,11 @@ struct SignInView: View {
     }
 
     private var termsCaption: some View {
-        HStack(spacing: 0) {
-            Text("By continuing you agree to our ")
-                .font(.cwCaption)
-                .foregroundStyle(Palette.muted)
-            Text("Terms")
-                .font(.cwCaption)
-                .foregroundStyle(Palette.muted)
-                .underline()
-            Text(" and ")
-                .font(.cwCaption)
-                .foregroundStyle(Palette.muted)
-            Text("Privacy")
-                .font(.cwCaption)
-                .foregroundStyle(Palette.muted)
-                .underline()
-            Text(".")
-                .font(.cwCaption)
-                .foregroundStyle(Palette.muted)
-        }
-        .multilineTextAlignment(.center)
+        Text("By continuing you agree to our [Terms](https://cronwatch.xyz/terms) and [Privacy](https://cronwatch.xyz/privacy).")
+            .font(.cwCaption)
+            .foregroundStyle(Palette.muted)
+            .tint(Palette.muted)
+            .multilineTextAlignment(.center)
     }
 
     private func topViewController() -> UIViewController? {

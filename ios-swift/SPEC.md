@@ -20,7 +20,7 @@ Source RN app to mirror:
 - **UI:** SwiftUI
 - **Min iOS:** 17.0
 - **Project format:** XcodeGen (`project.yml`) generates the `.xcodeproj`.
-- **Bundle ID:** `com.konradgnat.cronwatch.swift`
+- **Bundle ID:** `com.konradgnat.cronwatch`
 - **Display name:** Cronwatch
 - **Dependencies (SPM):**
   - `https://github.com/firebase/firebase-ios-sdk` (FirebaseAuth, FirebaseFirestore, FirebaseStorage)
@@ -506,7 +506,7 @@ targets:
         REVENUECAT_API_KEY_IOS: $(REVENUECAT_API_KEY_IOS)
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.konradgnat.cronwatch.swift
+        PRODUCT_BUNDLE_IDENTIFIER: com.konradgnat.cronwatch
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_PREVIEWS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

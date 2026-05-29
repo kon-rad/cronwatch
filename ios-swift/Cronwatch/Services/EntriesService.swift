@@ -203,7 +203,6 @@ final class EntriesService {
                               drafts: [CapturedEntryDraft],
                               source: EntrySource,
                               transcript: String?,
-                              audioUrl: String?,
                               captureId explicitCaptureId: String? = nil) async throws -> [Entry] {
         guard !drafts.isEmpty else {
             throw CaptureError.emptyDrafts
@@ -250,8 +249,7 @@ final class EntriesService {
             drafts: snappedDrafts,
             captureId: captureId,
             source: source,
-            transcript: transcript,
-            audioUrl: audioUrl
+            transcript: transcript
         )
 
         let batch = db.batch()
@@ -279,7 +277,6 @@ final class EntriesService {
                 "source": source.rawValue,
                 "createdAt": FieldValue.serverTimestamp(),
                 "transcript": transcript ?? NSNull(),
-                "audioUrl": audioUrl ?? NSNull(),
             ]
             batch.setData(data, forDocument: ref)
             pending.append(
@@ -292,7 +289,6 @@ final class EntriesService {
                     endTime: draft.endTime,
                     source: source,
                     transcript: transcript,
-                    audioUrl: audioUrl,
                     createdAt: createdAt
                 )
             )
@@ -329,7 +325,6 @@ final class EntriesService {
                 "source": plan.source.rawValue,
                 "createdAt": FieldValue.serverTimestamp(),
                 "transcript": plan.transcript ?? NSNull(),
-                "audioUrl": plan.audioUrl ?? NSNull(),
             ]
             batch.setData(data, forDocument: ref)
             pending.append(
@@ -342,7 +337,6 @@ final class EntriesService {
                     endTime: draft.endTime,
                     source: plan.source,
                     transcript: plan.transcript,
-                    audioUrl: plan.audioUrl,
                     createdAt: createdAt
                 )
             )
@@ -386,25 +380,33 @@ final class EntriesService {
     // entries the server had already separated).
     nonisolated static func snapAndDeoverlap(_ drafts: [CapturedEntryDraft]) -> [CapturedEntryDraft] {
         let slot = TimeUtils.slotSeconds
-        var sorted: [CapturedEntryDraft] = drafts.map { draft in
+
+        // Snap to 15-min boundaries, drop zero-duration entries
+        var snapped: [CapturedEntryDraft] = drafts.compactMap { draft in
             var copy = draft
             copy.startTime = TimeUtils.snapTo15(draft.startTime)
-            copy.endTime = TimeUtils.snapTo15(draft.endTime)
-            if copy.endTime <= copy.startTime {
-                copy.endTime = copy.startTime.addingTimeInterval(slot)
-            }
+            copy.endTime   = TimeUtils.snapTo15(draft.endTime)
+            guard copy.endTime > copy.startTime else { return nil }
             return copy
         }
-        sorted.sort { $0.startTime < $1.startTime }
-        for i in 1..<sorted.count {
-            if sorted[i].startTime < sorted[i - 1].endTime {
-                sorted[i].startTime = sorted[i - 1].endTime
-                if sorted[i].endTime <= sorted[i].startTime {
-                    sorted[i].endTime = sorted[i].startTime.addingTimeInterval(slot)
+
+        // Deduplicate identical (category, startTime, endTime) entries
+        var seen = Set<String>()
+        snapped = snapped.filter { draft in
+            let key = "\(draft.category)|\(draft.startTime.timeIntervalSince1970)|\(draft.endTime.timeIntervalSince1970)"
+            return seen.insert(key).inserted
+        }
+
+        snapped.sort { $0.startTime < $1.startTime }
+        for i in 1..<snapped.count {
+            if snapped[i].startTime < snapped[i - 1].endTime {
+                snapped[i].startTime = snapped[i - 1].endTime
+                if snapped[i].endTime <= snapped[i].startTime {
+                    snapped[i].endTime = snapped[i].startTime.addingTimeInterval(slot)
                 }
             }
         }
-        return sorted
+        return snapped
     }
 
     func fetchConflicts(uid: String, windowStart: Date, windowEnd: Date) async throws -> [Entry] {
@@ -444,8 +446,7 @@ final class EntriesService {
         drafts: [CapturedEntryDraft],
         captureId: String,
         source: EntrySource,
-        transcript: String?,
-        audioUrl: String?
+        transcript: String?
     ) -> ResolutionPlan {
         var resolutions: [Resolution] = []
         for entry in existing {
@@ -489,7 +490,6 @@ final class EntriesService {
                     category: entry.category,
                     note: entry.note,
                     transcript: entry.transcript,
-                    audioUrl: entry.audioUrl,
                     captureId: entry.captureId,
                     action: action
                 )
@@ -499,7 +499,6 @@ final class EntriesService {
             captureId: captureId,
             source: source,
             transcript: transcript,
-            audioUrl: audioUrl,
             drafts: drafts,
             resolutions: resolutions
         )
@@ -534,7 +533,6 @@ final class EntriesService {
                     "source": resolution.originalSource.rawValue,
                     "createdAt": FieldValue.serverTimestamp(),
                     "transcript": resolution.transcript ?? NSNull(),
-                    "audioUrl": resolution.audioUrl ?? NSNull(),
                 ]
                 var leftData = baseData
                 leftData["startTime"] = Timestamp(date: left.start)
@@ -559,16 +557,12 @@ final class EntriesService {
                 if existing.transcript == nil, let t = entry.transcript, !t.isEmpty {
                     existing.transcript = t
                 }
-                if existing.audioUrl == nil, let url = entry.audioUrl, !url.isEmpty {
-                    existing.audioUrl = url
-                }
                 byId[entry.captureId] = existing
             } else {
                 let capture = Capture(
                     captureId: entry.captureId,
                     source: entry.source,
                     transcript: entry.transcript,
-                    audioUrl: entry.audioUrl,
                     createdAt: entry.createdAt,
                     blocks: [entry]
                 )
@@ -606,7 +600,6 @@ final class EntriesService {
         let sourceRaw = data["source"] as? String
         let source: EntrySource = (sourceRaw == "text") ? .text : .voice
         let transcript = data["transcript"] as? String
-        let audioUrl = data["audioUrl"] as? String
         let storedCaptureId = data["captureId"] as? String
         let captureId = (storedCaptureId?.isEmpty == false) ? storedCaptureId! : id
 
@@ -619,7 +612,6 @@ final class EntriesService {
             endTime: endTime,
             source: source,
             transcript: transcript,
-            audioUrl: audioUrl,
             createdAt: createdAt
         )
     }

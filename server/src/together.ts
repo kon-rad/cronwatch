@@ -1,27 +1,21 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import Together from 'together-ai';
 import { z } from 'zod';
 import { env } from './env';
+import { buildTranscriptSystemPrompt } from './prompts';
 
 const together = new Together({ apiKey: env.together.apiKey });
 
-const CATEGORIES = [
-  'work',
-  'deep',
-  'meeting',
-  'study',
-  'exercise',
-  'sleep',
-  'meal',
-  'break',
-  'commute',
-  'entertain',
-  'personal',
-] as const;
+// Single source of truth shared with the client. See shared/categories.json.
+const categoriesData = JSON.parse(
+  readFileSync(join(__dirname, '../../shared/categories.json'), 'utf-8'),
+) as Array<{ key: string; label: string }>;
 
-type Category = (typeof CATEGORIES)[number];
+const CATEGORIES: readonly string[] = categoriesData.map((c) => c.key);
 const CATEGORY_SET: ReadonlySet<string> = new Set(CATEGORIES);
 
-const CATEGORY_ALIASES: Record<string, Category> = {
+const CATEGORY_ALIASES: Record<string, string> = {
   // common synonyms the model might emit
   workout: 'exercise',
   gym: 'exercise',
@@ -69,13 +63,13 @@ const CATEGORY_ALIASES: Record<string, Category> = {
   family: 'personal',
 };
 
-function normalizeCategory(raw: string): Category {
+function normalizeCategory(raw: string): string {
   const cleaned = raw.trim().toLowerCase();
-  if (CATEGORY_SET.has(cleaned)) return cleaned as Category;
+  if (CATEGORY_SET.has(cleaned)) return cleaned;
   if (CATEGORY_ALIASES[cleaned]) return CATEGORY_ALIASES[cleaned];
   // try first token (e.g., "deep work" → "deep")
   const first = cleaned.split(/[\s_-]+/)[0] ?? '';
-  if (CATEGORY_SET.has(first)) return first as Category;
+  if (CATEGORY_SET.has(first)) return first;
   if (CATEGORY_ALIASES[first]) return CATEGORY_ALIASES[first];
   return 'work';
 }
@@ -92,23 +86,13 @@ export const draftSchema = z.object({
   endTime: isoDateTime,
 });
 
+export const draftsResponseSchema = z.object({
+  entries: z.array(draftSchema).min(1),
+});
+
 export type Draft = z.infer<typeof draftSchema>;
 
-const SYSTEM_PROMPT = `You convert a single short time-tracking memo (typed or voice-transcribed) into a JSON entry.
-
-Allowed categories (return one of these as "category", lowercase, exact match): ${CATEGORIES.join(', ')}.
-If the memo doesn't match any, pick the closest one. Never invent new categories.
-
-Rules:
-- "note" is a short human-readable label (under 80 chars) describing what the user did. Strip filler words and meta phrases like "I just" or "log that".
-- "startTime" and "endTime" are ISO 8601 strings WITH the user's local timezone offset (e.g. "2026-05-08T09:00:00-07:00"). Never return naked times without an offset.
-- Anchor every relative phrase to the user's LOCAL "now" provided below.
-- If the memo names explicit clock times ("from 9 to 10:30"), anchor them to today's date in the user's timezone. If only a single time is given, treat it as the start and set endTime to local now.
-- If the memo says "just now", "the last hour", "for X minutes", or omits times, set endTime = local now and set startTime = endTime minus the implied duration (default 30 minutes if unspecified).
-- endTime MUST be >= startTime. If they collide, end = start + 1 minute.
-- Never return a time more than 24 hours away from local now.
-
-Return ONLY a JSON object with keys: category, note, startTime, endTime. No prose, no markdown.`;
+const SYSTEM_PROMPT = buildTranscriptSystemPrompt(CATEGORIES);
 
 function formatLocal(date: Date, tz?: string): { local: string; offset: string } {
   if (!tz) {
@@ -145,7 +129,7 @@ export async function structure(
   transcript: string,
   now: Date,
   tz?: string,
-): Promise<Draft> {
+): Promise<Draft[]> {
   const { local, offset } = formatLocal(now, tz);
   const userPrompt = `User local now: ${local}
 User timezone: ${tz ?? 'unknown'} (offset ${offset})
@@ -175,20 +159,61 @@ Memo: """${transcript}"""`;
     throw new Error(`Together AI returned non-JSON content: ${content.slice(0, 200)}`);
   }
 
-  const draft = draftSchema.parse(parsed);
+  const drafts = coerceDrafts(parsed);
 
-  // Normalize category to the allowed enum so downstream rendering and
-  // analytics never see freeform strings.
-  draft.category = normalizeCategory(draft.category);
+  const normalized = drafts.map((draft) => {
+    // Normalize category to the allowed enum so downstream rendering and
+    // analytics never see freeform strings.
+    draft.category = normalizeCategory(draft.category);
 
-  // Enforce endTime >= startTime. Models occasionally swap or collide them.
-  const start = new Date(draft.startTime).getTime();
-  const end = new Date(draft.endTime).getTime();
-  if (end < start) {
-    draft.endTime = new Date(start + 60 * 1000).toISOString();
-  } else if (end === start) {
-    draft.endTime = new Date(start + 60 * 1000).toISOString();
+    // Enforce endTime > startTime. The model occasionally anchors both clock
+    // times to the same day even when the memo crosses midnight ("11pm to
+    // 9am" said in the morning). Back-dating the start by 24h recovers the
+    // intended span when it would otherwise fit within a day.
+    const start = new Date(draft.startTime).getTime();
+    const end = new Date(draft.endTime).getTime();
+    if (end <= start) {
+      const dayMs = 24 * 60 * 60 * 1000;
+      const startMinusDay = start - dayMs;
+      if (end - startMinusDay > 0 && end - startMinusDay <= dayMs) {
+        draft.startTime = new Date(startMinusDay).toISOString();
+      } else {
+        draft.endTime = new Date(start + 60 * 1000).toISOString();
+      }
+    }
+
+    return draft;
+  });
+
+  // Backstop: enforce non-overlap between entries. Gaps are allowed; if a
+  // later entry's start falls inside an earlier entry's span, shift its start
+  // forward to the earlier entry's end (preserving its endTime when possible).
+  normalized.sort(
+    (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+  );
+  for (let i = 1; i < normalized.length; i++) {
+    const prevEnd = new Date(normalized[i - 1].endTime).getTime();
+    const curStart = new Date(normalized[i].startTime).getTime();
+    if (curStart < prevEnd) {
+      normalized[i].startTime = new Date(prevEnd).toISOString();
+      const curEnd = new Date(normalized[i].endTime).getTime();
+      if (curEnd <= prevEnd) {
+        normalized[i].endTime = new Date(prevEnd + 60 * 1000).toISOString();
+      }
+    }
   }
 
-  return draft;
+  return normalized;
+}
+
+// Older prompt iterations and lenient models sometimes return a bare draft object
+// or a bare array instead of {entries: [...]}. Accept all three shapes.
+function coerceDrafts(parsed: unknown): Draft[] {
+  if (Array.isArray(parsed)) {
+    return z.array(draftSchema).min(1).parse(parsed);
+  }
+  if (parsed && typeof parsed === 'object' && 'entries' in parsed) {
+    return draftsResponseSchema.parse(parsed).entries;
+  }
+  return [draftSchema.parse(parsed)];
 }

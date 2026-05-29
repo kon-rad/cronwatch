@@ -154,20 +154,22 @@ struct GoalsEditorView: View {
                 .font(.cwBody)
                 .foregroundStyle(Palette.muted)
             Spacer()
-            Stepper(
-                value: Binding(
-                    get: { goals[index].weeklyTargetHours },
-                    set: { goals[index].weeklyTargetHours = max(0.5, min(80, $0)) }
-                ),
-                in: 0.5...80,
-                step: 0.5
-            ) {
-                Text(formatHours(goals[index].weeklyTargetHours) + " / week")
-                    .font(.cwBody.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(Palette.ink)
-                    .frame(minWidth: 80, alignment: .trailing)
-            }
+            TextField("", value: Binding(
+                get: { goals[index].weeklyTargetHours },
+                set: { goals[index].weeklyTargetHours = max(0.5, min(80, $0)) }
+            ), format: .number)
+            .keyboardType(.decimalPad)
+            .multilineTextAlignment(.trailing)
+            .font(.cwBody.weight(.semibold))
+            .monospacedDigit()
+            .frame(width: 52)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Palette.bg)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+            Text("hours / week")
+                .font(.cwBody)
+                .foregroundStyle(Palette.muted)
         }
     }
 

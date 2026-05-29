@@ -8,7 +8,7 @@ struct MainTabView: View {
     @State private var showCapture = false
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        ZStack(alignment: .bottom) {
             TabView(selection: $selectedTab) {
                 OverviewView()
                     .tabItem { Image(systemName: "house") }
@@ -30,11 +30,14 @@ struct MainTabView: View {
             .toolbarBackground(Palette.bg, for: .tabBar)
             .toolbar(.visible, for: .tabBar)
 
-            FloatingMicButton {
-                showCapture = true
+            // Centered on the tab bar's top edge so 50% of the button overlaps above it.
+            // Tab bar content = 49pt; button radius = 28pt → bottom padding = 49 - 28 = 21pt.
+            HStack {
+                Spacer()
+                FloatingMicButton { showCapture = true }
+                Spacer()
             }
-            .padding(.trailing, 20)
-            .padding(.bottom, 64)
+            .padding(.bottom, 21)
         }
         .sheet(isPresented: $showCapture) {
             CaptureView()

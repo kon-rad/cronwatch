@@ -7,7 +7,7 @@ final class RevenueCatService: ObservableObject {
 
     @Published private(set) var entitlement: Entitlement = .free
 
-    private let entitlementID = "pro"
+    private let entitlementID = "subscription"
     var configured = false
 
     private init() {}
@@ -45,6 +45,10 @@ final class RevenueCatService: ObservableObject {
     func identify(uid: String) async {
         guard configured else { return }
         _ = try? await Purchases.shared.logIn(uid)
+    }
+
+    func apply(customerInfo: CustomerInfo) {
+        self.entitlement = mapEntitlement(from: customerInfo)
     }
 
     // MARK: - Helpers

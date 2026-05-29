@@ -12,13 +12,14 @@ struct DashboardHeroCard: View {
             coverageSection
                 .padding(.top, Spacing.xs)
 
+            Divider()
+                .background(Palette.border)
+                .padding(.vertical, Spacing.md)
+
             let setGoals = goals.filter { $0.isSet }
             if setGoals.isEmpty {
                 emptyGoalsSection
             } else {
-                Divider()
-                    .background(Palette.border)
-                    .padding(.vertical, Spacing.md)
                 goalsSection(setGoals)
             }
         }
@@ -35,19 +36,10 @@ struct DashboardHeroCard: View {
     // MARK: - Header
 
     private var cardHeader: some View {
-        HStack(alignment: .center) {
-            Text("TODAY")
-                .font(.cwCaption)
-                .tracking(1.2)
-                .foregroundStyle(Palette.muted)
-            Spacer()
-            Button(action: onEdit) {
-                Text("Edit")
-                    .font(.cwCaption.weight(.semibold))
-                    .foregroundColor(Palette.amber)
-            }
-            .buttonStyle(.plain)
-        }
+        Text("TODAY")
+            .font(.cwCaption)
+            .tracking(1.2)
+            .foregroundStyle(Palette.muted)
     }
 
     // MARK: - Coverage
@@ -94,15 +86,44 @@ struct DashboardHeroCard: View {
 
     // MARK: - Goals
 
+    private func goalsHeader(isEmpty: Bool) -> some View {
+        HStack(alignment: .center) {
+            Text("WEEK GOALS")
+                .font(.cwCaption)
+                .tracking(1.2)
+                .foregroundStyle(Palette.muted)
+            Spacer()
+            if isEmpty {
+                Button(action: onEdit) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Palette.amber)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button(action: onEdit) {
+                    Text("Edit")
+                        .font(.cwCaption.weight(.semibold))
+                        .foregroundColor(Palette.amber)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
     private var emptyGoalsSection: some View {
-        Text("Tap Edit to set up to 3 weekly goals →")
-            .font(.cwCaption)
-            .foregroundStyle(Palette.muted)
-            .padding(.top, Spacing.sm)
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            goalsHeader(isEmpty: true)
+            Text("Set your first goals.")
+                .font(.cwBody)
+                .foregroundStyle(Palette.muted)
+                .padding(.top, 2)
+        }
     }
 
     private func goalsSection(_ setGoals: [Goal]) -> some View {
         VStack(spacing: 10) {
+            goalsHeader(isEmpty: false)
             ForEach(setGoals, id: \.category) { goal in
                 goalRow(goal)
             }

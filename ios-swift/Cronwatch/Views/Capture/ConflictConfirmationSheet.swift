@@ -26,7 +26,7 @@ struct ConflictConfirmationSheet: View {
                             .font(.cwBody.weight(.semibold))
                             .foregroundColor(Palette.ink)
                         Spacer()
-                        Text(Self.formatRange(draft.startTime, draft.endTime))
+                        Text(Self.formatRangeWithDate(draft.startTime, draft.endTime))
                             .font(.cwCaption)
                             .monospacedDigit()
                             .foregroundColor(Palette.muted)
@@ -92,18 +92,26 @@ struct ConflictConfirmationSheet: View {
     private static func formatRange(_ start: Date, _ end: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "h:mm a"
-        return "\(formatter.string(from: start)) – \(formatter.string(from: end))"
+        return "\(formatter.string(from: start)) - \(formatter.string(from: end))"
+    }
+
+    private static func formatRangeWithDate(_ start: Date, _ end: Date) -> String {
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "MMM d"
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "h:mm a"
+        return "\(dateFmt.string(from: start)), \(timeFmt.string(from: start)) - \(timeFmt.string(from: end))"
     }
 
     private static func describe(resolution: Resolution) -> String {
         let label = Categories.label(for: resolution.category)
         switch resolution.action {
         case .delete:
-            return "• Delete “\(label)” \(formatRange(resolution.originalStart, resolution.originalEnd))"
+            return "• Delete \"\(label)\" \(formatRangeWithDate(resolution.originalStart, resolution.originalEnd))"
         case .trim(let s, let e):
-            return "• Trim “\(label)” to \(formatRange(s, e))"
+            return "• Trim \"\(label)\" (\(formatRangeWithDate(resolution.originalStart, resolution.originalEnd))) to \(formatRange(s, e))"
         case .split(let l, let r):
-            return "• Split “\(label)” into \(formatRange(l.start, l.end)) and \(formatRange(r.start, r.end))"
+            return "• Split \"\(label)\" (\(formatRangeWithDate(resolution.originalStart, resolution.originalEnd))) into \(formatRange(l.start, l.end)) and \(formatRange(r.start, r.end))"
         }
     }
 }

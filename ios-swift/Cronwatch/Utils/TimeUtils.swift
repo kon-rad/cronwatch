@@ -49,8 +49,50 @@ enum TimeUtils {
         Int(round(Double(minutes) / 15)) * 15
     }
 
+    // All standard locale UTC offsets are multiples of 15 minutes, so snapping
+    // on the absolute Unix epoch yields the same local-clock boundary.
+    static let slotSeconds: TimeInterval = 15 * 60
+
+    static func snapTo15(_ date: Date) -> Date {
+        let snapped = (date.timeIntervalSince1970 / slotSeconds).rounded() * slotSeconds
+        return Date(timeIntervalSince1970: snapped)
+    }
+
     static func totalTrackedMin(_ entries: [Entry]) -> Int {
         entries.reduce(0) { $0 + entryDurationMin($1) }
+    }
+
+    // Minutes of `day` covered by the union of entry intervals (0...1440).
+    // Overlapping segments are counted once, so this represents actual
+    // wall-clock coverage rather than a sum of durations.
+    static func coveredMinutesOfDay(_ entries: [Entry], day: Date) -> Int {
+        var intervals: [(Int, Int)] = []
+        for e in entries {
+            if let c = clipMinutesOfDay(e, day: day) {
+                intervals.append((c.startMin, c.endMin))
+            }
+        }
+        guard !intervals.isEmpty else { return 0 }
+        intervals.sort { $0.0 < $1.0 }
+        var total = 0
+        var curStart = intervals[0].0
+        var curEnd = intervals[0].1
+        for (s, e) in intervals.dropFirst() {
+            if s <= curEnd {
+                curEnd = max(curEnd, e)
+            } else {
+                total += curEnd - curStart
+                curStart = s
+                curEnd = e
+            }
+        }
+        total += curEnd - curStart
+        return total
+    }
+
+    static func trackedPercentOfDay(_ entries: [Entry], day: Date) -> Int {
+        let covered = coveredMinutesOfDay(entries, day: day)
+        return min(100, Int(round(Double(covered) / Double(minPerDay) * 100)))
     }
 
     static func startOfToday(_ now: Date = Date()) -> Date {
@@ -71,5 +113,21 @@ enum TimeUtils {
         let hour = (totalMin / 60) % 24
         let minute = totalMin % 60
         return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: baseDate) ?? baseDate
+    }
+
+    // Returns the portion of the entry that falls within `day` as minutes-
+    // since-midnight, or nil if the entry doesn't intersect the day. Used by
+    // grid views so an entry spanning midnight renders on both days, each
+    // showing only its slice.
+    static func clipMinutesOfDay(_ entry: Entry, day: Date) -> (startMin: Int, endMin: Int)? {
+        let cal = Calendar.current
+        let dayStart = cal.startOfDay(for: day)
+        guard let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
+        let start = max(entry.startTime, dayStart)
+        let end = min(entry.endTime, dayEnd)
+        guard end > start else { return nil }
+        let startMin = Int(start.timeIntervalSince(dayStart) / 60)
+        let endMin = Int(end.timeIntervalSince(dayStart) / 60)
+        return (startMin, endMin)
     }
 }

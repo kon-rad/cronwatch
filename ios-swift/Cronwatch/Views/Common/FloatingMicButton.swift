@@ -13,7 +13,7 @@ struct FloatingMicButton: View {
                 Circle()
                     .fill(Palette.amber)
                     .frame(width: 56, height: 56)
-                Image(systemName: "mic")
+                Image(systemName: "plus")
                     .font(.system(size: 24, weight: .regular))
                     .foregroundStyle(Palette.white)
             }

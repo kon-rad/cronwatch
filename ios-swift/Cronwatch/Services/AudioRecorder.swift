@@ -7,6 +7,7 @@ final class AudioRecorder: ObservableObject {
 
     private var recorder: AVAudioRecorder?
     private var currentURL: URL?
+    private var startedAt: Date?
 
     func requestPermission() async -> Bool {
         await withCheckedContinuation { continuation in
@@ -41,17 +42,24 @@ final class AudioRecorder: ObservableObject {
 
         self.recorder = recorder
         self.currentURL = url
+        self.startedAt = Date()
         self.isRecording = true
     }
 
-    func stop() -> URL? {
-        guard isRecording, let recorder else { return nil }
+    struct Recording {
+        let url: URL
+        let duration: TimeInterval
+    }
+
+    func stop() -> Recording? {
+        guard isRecording, let recorder, let url = currentURL else { return nil }
         recorder.stop()
-        let url = currentURL
+        let duration = startedAt.map { Date().timeIntervalSince($0) } ?? 0
         self.recorder = nil
         self.currentURL = nil
+        self.startedAt = nil
         self.isRecording = false
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
-        return url
+        return Recording(url: url, duration: duration)
     }
 }

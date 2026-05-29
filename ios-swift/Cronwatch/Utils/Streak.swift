@@ -52,9 +52,12 @@ enum Streak {
         return flags
     }
 
+    /// Today is in progress and never reaches full coverage, so the streak
+    /// counts only completed days strictly before today.
     static func currentStreak(from flags: [Bool]) -> Int {
+        guard flags.count >= 2 else { return 0 }
         var streak = 0
-        for flag in flags.reversed() {
+        for flag in flags.dropLast().reversed() {
             if flag { streak += 1 } else { break }
         }
         return streak

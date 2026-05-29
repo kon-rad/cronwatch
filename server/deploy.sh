@@ -11,7 +11,7 @@
 #   ./deploy.sh                # rsync + remote build + pm2 reload
 #   ./deploy.sh --setup        # first-time droplet bootstrap (Node, pm2, nginx)
 #
-# The actual app secrets (AWS keys, Deepgram, Together, Firebase) live in
+# The actual app secrets (Deepgram, Together, Firebase) live in
 # $REMOTE_PATH/.env on the server. They are NOT touched by this script.
 
 set -euo pipefail
@@ -45,11 +45,15 @@ ssh_run() {
   ssh "${SSH_OPTS[@]}" "$SSH_USER@$DROPLET_HOST" "$@"
 }
 
-rsync_push() {
+rsh_cmd() {
   local rsh="ssh -p $SSH_PORT -o StrictHostKeyChecking=accept-new"
   if [[ -n "$SSH_KEY" ]]; then
     rsh="$rsh -i $SSH_KEY"
   fi
+  printf '%s' "$rsh"
+}
+
+rsync_push() {
   rsync -az --delete \
     --exclude '.git' \
     --exclude 'node_modules' \
@@ -59,8 +63,25 @@ rsync_push() {
     --exclude '.deploy.env' \
     --exclude '*.log' \
     --exclude '.DS_Store' \
-    -e "$rsh" \
+    -e "$(rsh_cmd)" \
     ./ "$SSH_USER@$DROPLET_HOST:$REMOTE_PATH/"
+}
+
+# together.ts reads join(__dirname, '../../shared/categories.json'). In the
+# compiled dist at $REMOTE_PATH/dist, that resolves to $(dirname REMOTE_PATH)/shared.
+# Ship the repo-root shared/ to that sibling location so prod can find it.
+rsync_shared() {
+  local shared_local="$SCRIPT_DIR/../shared"
+  local shared_remote
+  shared_remote="$(dirname "$REMOTE_PATH")/shared"
+  if [[ ! -d "$shared_local" ]]; then
+    return 0
+  fi
+  ssh_run "mkdir -p '$shared_remote'"
+  rsync -az --delete \
+    --exclude '.DS_Store' \
+    -e "$(rsh_cmd)" \
+    "$shared_local/" "$SSH_USER@$DROPLET_HOST:$shared_remote/"
 }
 
 bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
@@ -74,6 +95,7 @@ if [[ "${1:-}" == "--setup" ]]; then
   bold "  Creating $REMOTE_PATH and pushing code…"
   ssh_run "mkdir -p $REMOTE_PATH /var/log/cronwatch-server"
   rsync_push
+  rsync_shared
   bold "  Running setup-server.sh on the droplet…"
   ssh_run "bash $REMOTE_PATH/scripts/setup-server.sh"
   green "✓ Bootstrap complete."
@@ -108,6 +130,9 @@ fi
 
 bold "  Syncing code…"
 rsync_push
+
+bold "  Syncing shared/ → $(dirname "$REMOTE_PATH")/shared…"
+rsync_shared
 
 bold "  Running remote-deploy.sh…"
 ssh_run "bash $REMOTE_PATH/scripts/remote-deploy.sh '$SERVICE_NAME'"

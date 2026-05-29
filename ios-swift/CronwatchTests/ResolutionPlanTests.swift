@@ -25,7 +25,6 @@ final class ResolutionPlanTests: XCTestCase {
             endTime: d(endHour, endMin),
             source: .voice,
             transcript: nil,
-            audioUrl: nil,
             createdAt: d(0)
         )
     }
@@ -45,8 +44,7 @@ final class ResolutionPlanTests: XCTestCase {
             drafts: drafts,
             captureId: "c_new",
             source: .voice,
-            transcript: "t",
-            audioUrl: nil
+            transcript: "t"
         )
     }
 
@@ -113,14 +111,12 @@ final class ResolutionPlanTests: XCTestCase {
             endTime: d(10, 0),
             source: .text,
             transcript: "old",
-            audioUrl: "https://x/y.m4a",
             createdAt: d(0)
         )
         let p = plan(existing: [e], drafts: [draft(9, 0, 10, 0)])
         XCTAssertEqual(p.resolutions[0].originalSource, .text)
         XCTAssertEqual(p.resolutions[0].category, "study")
         XCTAssertEqual(p.resolutions[0].transcript, "old")
-        XCTAssertEqual(p.resolutions[0].audioUrl, "https://x/y.m4a")
         XCTAssertEqual(p.resolutions[0].captureId, "c1")
     }
 

@@ -9,7 +9,6 @@ struct CaptureJob: Identifiable, Equatable, Codable {
     let uid: String
     let audioURL: URL?
     var transcript: String?
-    var remoteAudioUrl: String?
     var entryDrafts: [CapturedEntryDraft]?
     var plan: ResolutionPlan?
     var status: CaptureJobStatus
@@ -35,7 +34,6 @@ final class CaptureQueue: ObservableObject {
     func enqueue(uid: String,
                  audioURL: URL,
                  transcript: String? = nil,
-                 remoteAudioUrl: String? = nil,
                  entryDrafts: [CapturedEntryDraft]? = nil,
                  initialStatus: CaptureJobStatus = .queued,
                  error: String? = nil) -> String {
@@ -46,7 +44,6 @@ final class CaptureQueue: ObservableObject {
             uid: uid,
             audioURL: storedURL,
             transcript: transcript,
-            remoteAudioUrl: remoteAudioUrl,
             entryDrafts: entryDrafts,
             plan: nil,
             status: initialStatus,
@@ -69,7 +66,6 @@ final class CaptureQueue: ObservableObject {
             uid: uid,
             audioURL: nil,
             transcript: transcript,
-            remoteAudioUrl: nil,
             entryDrafts: nil,
             plan: nil,
             status: .queued,
@@ -168,13 +164,11 @@ final class CaptureQueue: ObservableObject {
     func update(jobId: String,
                 transcript: String?? = nil,
                 entryDrafts: [CapturedEntryDraft]?? = nil,
-                remoteAudioUrl: String?? = nil,
                 status: CaptureJobStatus? = nil,
                 error: String?? = nil) {
         guard let index = jobs.firstIndex(where: { $0.id == jobId }) else { return }
         if let transcript { jobs[index].transcript = transcript }
         if let entryDrafts { jobs[index].entryDrafts = entryDrafts }
-        if let remoteAudioUrl { jobs[index].remoteAudioUrl = remoteAudioUrl }
         if let status { jobs[index].status = status }
         if let error { jobs[index].error = error }
         saveToDisk()
@@ -220,9 +214,8 @@ final class CaptureQueue: ObservableObject {
         case success
         case awaiting(plan: ResolutionPlan,
                       transcript: String?,
-                      remoteAudioUrl: String?,
                       entryDrafts: [CapturedEntryDraft]?)
-        case partial(transcript: String?, remoteAudioUrl: String?, entryDrafts: [CapturedEntryDraft]?, error: String)
+        case partial(transcript: String?, entryDrafts: [CapturedEntryDraft]?, error: String)
         case failure(String)
     }
 
@@ -233,7 +226,6 @@ final class CaptureQueue: ObservableObject {
 
         // Resume from the latest unfinished step.
         var transcript = job.transcript
-        var remoteAudioUrl = job.remoteAudioUrl
         var entryDrafts = job.entryDrafts
 
         if entryDrafts == nil {
@@ -245,19 +237,16 @@ final class CaptureQueue: ObservableObject {
                 do {
                     let result = try await CaptureService.capture(audioURL: audioURL)
                     transcript = result.transcript
-                    remoteAudioUrl = result.audioUrl
                     entryDrafts = result.drafts
                 } catch let error as CaptureError {
                     return .partial(
                         transcript: transcript,
-                        remoteAudioUrl: remoteAudioUrl,
                         entryDrafts: entryDrafts,
                         error: error.localizedDescription
                     )
                 } catch {
                     return .partial(
                         transcript: transcript,
-                        remoteAudioUrl: remoteAudioUrl,
                         entryDrafts: entryDrafts,
                         error: error.localizedDescription
                     )
@@ -269,14 +258,12 @@ final class CaptureQueue: ObservableObject {
                 } catch let error as CaptureError {
                     return .partial(
                         transcript: transcript,
-                        remoteAudioUrl: remoteAudioUrl,
                         entryDrafts: entryDrafts,
                         error: error.localizedDescription
                     )
                 } catch {
                     return .partial(
                         transcript: transcript,
-                        remoteAudioUrl: remoteAudioUrl,
                         entryDrafts: entryDrafts,
                         error: error.localizedDescription
                     )
@@ -287,7 +274,6 @@ final class CaptureQueue: ObservableObject {
         guard let drafts = entryDrafts, !drafts.isEmpty else {
             return .partial(
                 transcript: transcript,
-                remoteAudioUrl: remoteAudioUrl,
                 entryDrafts: entryDrafts,
                 error: "Empty draft."
             )
@@ -298,7 +284,6 @@ final class CaptureQueue: ObservableObject {
         guard !snapped.isEmpty else {
             return .partial(
                 transcript: transcript,
-                remoteAudioUrl: remoteAudioUrl,
                 entryDrafts: entryDrafts,
                 error: "Empty draft."
             )
@@ -316,7 +301,6 @@ final class CaptureQueue: ObservableObject {
         } catch {
             return .partial(
                 transcript: transcript,
-                remoteAudioUrl: remoteAudioUrl,
                 entryDrafts: entryDrafts,
                 error: "Couldn't check for conflicts."
             )
@@ -327,15 +311,13 @@ final class CaptureQueue: ObservableObject {
             drafts: snapped,
             captureId: job.id,
             source: source,
-            transcript: (transcript?.isEmpty == false) ? transcript : nil,
-            audioUrl: (remoteAudioUrl?.isEmpty == false) ? remoteAudioUrl : nil
+            transcript: (transcript?.isEmpty == false) ? transcript : nil
         )
 
         if plan.hasConflicts {
             return .awaiting(
                 plan: plan,
                 transcript: transcript,
-                remoteAudioUrl: remoteAudioUrl,
                 entryDrafts: entryDrafts
             )
         }
@@ -346,7 +328,6 @@ final class CaptureQueue: ObservableObject {
         } catch {
             return .partial(
                 transcript: transcript,
-                remoteAudioUrl: remoteAudioUrl,
                 entryDrafts: entryDrafts,
                 error: error.localizedDescription
             )
@@ -361,16 +342,14 @@ final class CaptureQueue: ObservableObject {
                 Self.deleteAudio(audioURL)
             }
             jobs.remove(at: index)
-        case .awaiting(let plan, let transcript, let remoteAudioUrl, let entryDrafts):
+        case .awaiting(let plan, let transcript, let entryDrafts):
             if let transcript { jobs[index].transcript = transcript }
-            if let remoteAudioUrl { jobs[index].remoteAudioUrl = remoteAudioUrl }
             if let entryDrafts { jobs[index].entryDrafts = entryDrafts }
             jobs[index].plan = plan
             jobs[index].status = .awaitingConfirmation
             jobs[index].error = nil
-        case .partial(let transcript, let remoteAudioUrl, let entryDrafts, let message):
+        case .partial(let transcript, let entryDrafts, let message):
             if let transcript { jobs[index].transcript = transcript }
-            if let remoteAudioUrl { jobs[index].remoteAudioUrl = remoteAudioUrl }
             if let entryDrafts { jobs[index].entryDrafts = entryDrafts }
             jobs[index].status = .error
             jobs[index].error = message

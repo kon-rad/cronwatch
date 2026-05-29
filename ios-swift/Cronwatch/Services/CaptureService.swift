@@ -2,8 +2,6 @@ import Foundation
 
 struct CaptureResult: Equatable {
     let transcript: String
-    let audioUrl: String
-    let audioKey: String
     let drafts: [CapturedEntryDraft]
 }
 
@@ -76,8 +74,6 @@ enum CaptureService {
 
         struct Payload: Decodable {
             let transcript: String
-            let audioUrl: String
-            let audioKey: String
             let drafts: [DraftWire]
         }
 
@@ -90,8 +86,6 @@ enum CaptureService {
 
         return CaptureResult(
             transcript: decoded.transcript,
-            audioUrl: decoded.audioUrl,
-            audioKey: decoded.audioKey,
             drafts: drafts
         )
     }
