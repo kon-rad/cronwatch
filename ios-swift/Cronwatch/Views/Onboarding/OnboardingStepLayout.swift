@@ -37,6 +37,7 @@ struct OnboardingStepLayout<Content: View>: View {
                             .font(.system(size: 18, weight: .medium))
                             .foregroundStyle(Palette.ink)
                     }
+                    .accessibilityLabel("Back")
                     .padding(.bottom, Spacing.lg)
                 } else {
                     Spacer().frame(height: Spacing.lg + 28)
@@ -63,7 +64,7 @@ struct OnboardingStepLayout<Content: View>: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(Palette.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, Spacing.md)
                         .background(canContinue ? Palette.amber : Palette.border)
                         .clipShape(RoundedRectangle(cornerRadius: Radius.md))
                 }
