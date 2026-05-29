@@ -15,9 +15,9 @@ struct RootView: View {
             } else if auth.currentUser == nil {
                 SignInView()
                     .transition(.opacity)
-            } else if showOnboarding {
+            } else if showOnboarding, let uid = auth.currentUser?.uid {
                 OnboardingFlow(
-                    uid: auth.currentUser!.uid,
+                    uid: uid,
                     onComplete: { hasCompletedOnboarding = true }
                 )
                 .transition(.opacity)
