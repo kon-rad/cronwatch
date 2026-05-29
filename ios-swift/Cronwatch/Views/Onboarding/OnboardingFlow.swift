@@ -15,6 +15,8 @@ struct OnboardingFlow: View {
         Goal(category: "", weeklyTargetHours: 0),
         Goal(category: "", weeklyTargetHours: 0),
     ]
+    @State private var isSaving = false
+    @State private var saveTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
@@ -28,7 +30,7 @@ struct OnboardingFlow: View {
             case 1:
                 OnboardingBetterAtView(
                     value: $wantsToBeBetterAt,
-                    onBack: { step = 0 },
+                    onBack: { saveTask?.cancel(); saveTask = nil; step = 0 },
                     onNext: { saveAndAdvance(from: 1) }
                 )
                 .transition(.asymmetric(
@@ -38,7 +40,7 @@ struct OnboardingFlow: View {
             case 2:
                 OnboardingWorkTypeView(
                     value: $workType,
-                    onBack: { step = 1 },
+                    onBack: { saveTask?.cancel(); saveTask = nil; step = 1 },
                     onNext: { saveAndAdvance(from: 2) }
                 )
                 .transition(.asymmetric(
@@ -50,7 +52,7 @@ struct OnboardingFlow: View {
                     years3: $vision3Years,
                     years5: $vision5Years,
                     years10: $vision10Years,
-                    onBack: { step = 2 },
+                    onBack: { saveTask?.cancel(); saveTask = nil; step = 2 },
                     onNext: { saveAndAdvance(from: 3) }
                 )
                 .transition(.asymmetric(
@@ -60,7 +62,7 @@ struct OnboardingFlow: View {
             case 4:
                 OnboardingGoalsView(
                     goals: $goals,
-                    onBack: { step = 3 },
+                    onBack: { saveTask?.cancel(); saveTask = nil; step = 3 },
                     onNext: { saveAndAdvance(from: 4) }
                 )
                 .transition(.asymmetric(
@@ -80,8 +82,12 @@ struct OnboardingFlow: View {
         .animation(.easeInOut(duration: 0.3), value: step)
     }
 
+    @MainActor
     private func saveAndAdvance(from currentStep: Int) {
-        Task {
+        guard !isSaving else { return }
+        isSaving = true
+        saveTask = Task {
+            defer { isSaving = false }
             do {
                 switch currentStep {
                 case 1:
@@ -105,13 +111,13 @@ struct OnboardingFlow: View {
                 default:
                     break
                 }
-            } catch {
-                // Save failure is non-critical; user is not blocked.
-            }
+            } catch {}
+            guard !Task.isCancelled else { return }
             step = currentStep + 1
         }
     }
 
+    @MainActor
     private func complete() {
         Task {
             try? await UserSettingsService.shared.setOnboardingCompleted(uid: uid)
