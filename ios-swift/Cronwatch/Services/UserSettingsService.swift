@@ -34,7 +34,9 @@ final class UserSettingsService {
             while goals.count < 3 {
                 goals.append(Goal(category: "", weeklyTargetHours: 0))
             }
-            onChange(UserSettings(goals: Array(goals.prefix(3))))
+            var settings = UserSettings.empty
+            settings.goals = Array(goals.prefix(3))
+            onChange(settings)
         }
         return { registration.remove() }
     }
