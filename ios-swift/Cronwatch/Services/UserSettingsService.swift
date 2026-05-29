@@ -25,7 +25,9 @@ final class UserSettingsService {
 
         let doc = userDoc(uid: uid)
         let registration = doc.addSnapshotListener { snapshot, _ in
-            let raw = (snapshot?.data()?["goals"] as? [[String: Any]]) ?? []
+            let data = snapshot?.data() ?? [:]
+
+            let raw = (data["goals"] as? [[String: Any]]) ?? []
             var goals: [Goal] = raw.compactMap { map in
                 guard let category = map["category"] as? String,
                       let target = map["weeklyTargetHours"] as? Double else { return nil }
@@ -34,9 +36,16 @@ final class UserSettingsService {
             while goals.count < 3 {
                 goals.append(Goal(category: "", weeklyTargetHours: 0))
             }
-            var settings = UserSettings.empty
-            settings.goals = Array(goals.prefix(3))
-            onChange(settings)
+
+            onChange(UserSettings(
+                goals: Array(goals.prefix(3)),
+                wantsToBeBetterAt: data["wantsToBeBetterAt"] as? String ?? "",
+                workType:          data["workType"]          as? String ?? "",
+                vision3Years:      data["vision3Years"]      as? String ?? "",
+                vision5Years:      data["vision5Years"]      as? String ?? "",
+                vision10Years:     data["vision10Years"]     as? String ?? "",
+                onboardingCompleted: data["onboardingCompleted"] as? Bool ?? false
+            ))
         }
         return { registration.remove() }
     }
@@ -50,6 +59,17 @@ final class UserSettingsService {
             "goals": data,
             "goalsUpdatedAt": FieldValue.serverTimestamp(),
         ], merge: true)
+    }
+
+    func saveFields(uid: String, _ fields: [String: Any]) async throws {
+        guard FirebaseBootstrap.isConfigured else {
+            throw UserSettingsServiceError.firebaseNotConfigured
+        }
+        try await userDoc(uid: uid).setData(fields, merge: true)
+    }
+
+    func setOnboardingCompleted(uid: String) async throws {
+        try await saveFields(uid: uid, ["onboardingCompleted": true])
     }
 
     private func userDoc(uid: String) -> DocumentReference {
