@@ -149,10 +149,18 @@ enum CaptureService {
     }
 
     private static func requireIdToken() async throws -> String {
-        guard let token = await AuthService.shared.idToken() else {
+        do {
+            return try await AuthService.shared.idToken()
+        } catch is AuthServiceError {
             throw CaptureError.notSignedIn
+        } catch {
+            let ns = error as NSError
+            print("[CaptureService] getIDToken failed — domain: \(ns.domain), code: \(ns.code), desc: \(ns.localizedDescription)")
+            if !ns.userInfo.isEmpty {
+                print("[CaptureService] getIDToken userInfo: \(ns.userInfo)")
+            }
+            throw CaptureError.network(error)
         }
-        return token
     }
 
     private static func readError(_ data: Data) -> String? {

@@ -109,10 +109,22 @@ enum TimeUtils {
         minutesSinceMidnight(date)
     }
 
+    // Resolves minutes-past-midnight against `baseDate`. Values >= 1440 roll
+    // into following days, so an end time of 1500 (1:00am) lands on the day
+    // after `baseDate`. This lets entries span midnight (e.g. a party that
+    // ends at 1am the next morning).
     static func date(_ baseDate: Date, withMinutesOfDay totalMin: Int) -> Date {
-        let hour = (totalMin / 60) % 24
-        let minute = totalMin % 60
-        return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: baseDate) ?? baseDate
+        let cal = Calendar.current
+        let dayOffset = totalMin / (24 * 60)
+        let minuteOfDay = totalMin % (24 * 60)
+        let hour = minuteOfDay / 60
+        let minute = minuteOfDay % 60
+        if dayOffset > 0 {
+            let dayStart = cal.startOfDay(for: baseDate)
+            let base = cal.date(byAdding: .day, value: dayOffset, to: dayStart) ?? baseDate
+            return cal.date(bySettingHour: hour, minute: minute, second: 0, of: base) ?? base
+        }
+        return cal.date(bySettingHour: hour, minute: minute, second: 0, of: baseDate) ?? baseDate
     }
 
     // Returns the portion of the entry that falls within `day` as minutes-

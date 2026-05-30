@@ -4,11 +4,14 @@ struct ProfileReportsSection: View {
     let uid: String
     let goals: [String]
 
+    @EnvironmentObject private var rc: RevenueCatService
+
     @State private var reports: [ProfileReport] = []
     @State private var unsubscribe: (() -> Void)?
     @State private var showComposer = false
     @State private var showAllReports = false
     @State private var openReport: ProfileReport?
+    @State private var showPaywall = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -36,6 +39,9 @@ struct ProfileReportsSection: View {
             unsubscribe?()
             unsubscribe = nil
         }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+        }
         .sheet(isPresented: $showComposer) {
             ReportComposerView(
                 uid: uid,
@@ -57,7 +63,11 @@ struct ProfileReportsSection: View {
 
     private func generateRow(isFirst: Bool) -> some View {
         Button {
-            showComposer = true
+            if rc.entitlement == .free {
+                showPaywall = true
+            } else {
+                showComposer = true
+            }
         } label: {
             HStack(spacing: Spacing.sm) {
                 Image(systemName: "sparkles")

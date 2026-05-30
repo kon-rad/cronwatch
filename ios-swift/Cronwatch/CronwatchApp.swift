@@ -5,6 +5,7 @@ import GoogleSignIn
 @main
 struct CronwatchApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     @StateObject private var auth = AuthService.shared
     @StateObject private var rc = RevenueCatService.shared
     @StateObject private var toasts = ToastCenter.shared
@@ -27,6 +28,12 @@ struct CronwatchApp: App {
             .onAppear {
                 bridge.observe(queue: queue, toasts: toasts)
                 conflicts.observe(queue: queue)
+            }
+            .task(id: auth.currentUser?.uid) {
+                if let uid = auth.currentUser?.uid {
+                    await rc.identify(uid: uid)
+                    _ = await rc.refreshEntitlement()
+                }
             }
             .sheet(item: $conflicts.activeJob) { pending in
                 ConflictConfirmationSheet(

@@ -12,7 +12,7 @@ struct FloatingMicButton: View {
             ZStack {
                 Circle()
                     .fill(Palette.amber)
-                    .frame(width: 56, height: 56)
+                    .frame(width: 64, height: 64)
                 Image(systemName: "plus")
                     .font(.system(size: 24, weight: .regular))
                     .foregroundStyle(Palette.white)

@@ -366,11 +366,92 @@ final class EntriesService {
         try await entriesCollection(uid: uid).document(id).updateData(update)
     }
 
+    // Computes how existing entries must change to make room for an in-place
+    // edit of `entryId` to [newStart, newEnd]. The edited entry is excluded
+    // from its own conflict set. Returns the resolutions (trim/delete/split)
+    // for every other entry that overlaps the new range; empty means no
+    // conflict. Mirrors the voice-capture conflict flow.
+    func planEditResolutions(uid: String,
+                             entryId: String,
+                             newStart: Date,
+                             newEnd: Date,
+                             category: String,
+                             note: String) async throws -> [Resolution] {
+        guard FirebaseBootstrap.isConfigured else {
+            throw EntriesServiceError.firebaseNotConfigured
+        }
+        let collection = entriesCollection(uid: uid)
+        let existing = try await Self.fetchConflicts(
+            in: collection,
+            windowStart: newStart,
+            windowEnd: newEnd
+        ).filter { $0.id != entryId }
+        let draft = CapturedEntryDraft(
+            category: category,
+            note: note,
+            startTime: newStart,
+            endTime: newEnd
+        )
+        let plan = Self.buildResolutionPlan(
+            existing: existing,
+            drafts: [draft],
+            captureId: "",
+            source: .text,
+            transcript: nil
+        )
+        return plan.resolutions
+    }
+
+    // Applies an in-place edit to `id` plus the supplied resolutions to the
+    // conflicting entries, atomically in a single batch. Used when the user
+    // confirms an edit that overlaps other entries.
+    func commitEntryEdit(uid: String,
+                         id: String,
+                         category: String,
+                         note: String,
+                         startTime: Date,
+                         endTime: Date,
+                         resolutions: [Resolution]) async throws {
+        guard FirebaseBootstrap.isConfigured else {
+            throw EntriesServiceError.firebaseNotConfigured
+        }
+        let collection = entriesCollection(uid: uid)
+        let batch = collection.firestore.batch()
+        Self.applyResolutions(resolutions, in: collection, batch: batch)
+        batch.updateData(
+            [
+                "category": category,
+                "note": note,
+                "startTime": Timestamp(date: startTime),
+                "endTime": Timestamp(date: endTime),
+            ],
+            forDocument: collection.document(id)
+        )
+        try await batch.commit()
+    }
+
     func deleteEntry(uid: String, id: String) async throws {
         guard FirebaseBootstrap.isConfigured else {
             throw EntriesServiceError.firebaseNotConfigured
         }
         try await entriesCollection(uid: uid).document(id).delete()
+    }
+
+    func deleteAllUserData(uid: String) async throws {
+        guard FirebaseBootstrap.isConfigured else {
+            throw EntriesServiceError.firebaseNotConfigured
+        }
+        let entriesSnapshot = try await entriesCollection(uid: uid).getDocuments()
+        for document in entriesSnapshot.documents {
+            try await document.reference.delete()
+        }
+        let db = entriesCollection(uid: uid).firestore
+        let reportsCollection = db.collection("users").document(uid).collection("reports")
+        let reportsSnapshot = try await reportsCollection.getDocuments()
+        for document in reportsSnapshot.documents {
+            try await document.reference.delete()
+        }
+        try await db.collection("users").document(uid).delete()
     }
 
     // MARK: - Conflict resolution

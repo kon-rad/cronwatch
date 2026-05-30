@@ -101,9 +101,9 @@ Cronwatch offers two auto-renewing subscriptions:
 
 Payment is charged to your Apple ID at confirmation of purchase. Subscriptions renew automatically unless canceled at least 24 hours before the end of the current period. Your account will be charged for renewal within 24 hours prior to the end of the period at the same price. Manage or cancel in Settings → Apple ID → Subscriptions.
 
-Privacy Policy: https://cronwatch.app/privacy
-Terms of Service: https://cronwatch.app/terms
-Support: hello@cronwatch.app
+Privacy Policy: https://cronwatch.xyz/privacy
+Terms of Service: https://cronwatch.xyz/terms
+Support: synducer@gmail.com
 ```
 
 ---
@@ -131,16 +131,16 @@ Cronwatch was previously a React Native prototype. This release rebuilds it as a
 
 Coming soon: monthly heatmap, deep-work weekly trend, and the values-drift report.
 
-If you hit a bug or have a request, email hello@cronwatch.app — replies come from a human (the founder).
+If you hit a bug or have a request, email synducer@gmail.com — replies come from a human (the founder).
 ```
 
 ---
 
 ## Pre-submission checklist
 
-- [ ] Replace `https://cronwatch.app/privacy` with the live Privacy Policy URL.
-- [ ] Replace `https://cronwatch.app/terms` with the live Terms of Service URL.
-- [ ] Replace `hello@cronwatch.app` with the real support email (App Store Connect requires a working address).
+- [x] Privacy Policy URL: https://cronwatch.xyz/privacy (live)
+- [x] Terms of Service URL: https://cronwatch.xyz/terms (live)
+- [x] Support email: synducer@gmail.com
 - [ ] Verify the auto-renewing subscription disclosure text matches the prices configured in App Store Connect (weekly $4 / yearly $40 are placeholder figures from the README — confirm against RevenueCat / App Store Connect).
 - [ ] Decide between the safer keyword string (default above) and the competitor-term variant. Toggl/RescueTime in keywords is widely tolerated by Apple but is technically against guideline 5.2.4 — risk is rejection, not removal post-approval.
 - [ ] Re-count Promotional Text after any edit — 170 characters is tight.

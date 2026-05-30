@@ -5,10 +5,15 @@ import RevenueCat
 final class RevenueCatService: ObservableObject {
     static let shared = RevenueCatService()
 
-    @Published private(set) var entitlement: Entitlement = .free
+    @Published private(set) var entitlement: Entitlement = RevenueCatService.couponRedeemed ? .yearly : .free
 
     private let entitlementID = "subscription"
     var configured = false
+
+    private static let couponDefaultsKey = "coupon_redeemed_ns2026"
+    private static var couponRedeemed: Bool {
+        UserDefaults.standard.bool(forKey: couponDefaultsKey)
+    }
 
     private init() {}
 
@@ -19,26 +24,26 @@ final class RevenueCatService: ObservableObject {
     }
 
     func refreshEntitlement() async -> Entitlement {
-        guard configured else { return .free }
+        guard configured else { return couponFallback(.free) }
         do {
             let info = try await Purchases.shared.customerInfo()
-            let resolved = mapEntitlement(from: info)
+            let resolved = couponFallback(mapEntitlement(from: info))
             self.entitlement = resolved
             return resolved
         } catch {
-            return .free
+            return couponFallback(.free)
         }
     }
 
     func restore() async -> Entitlement {
-        guard configured else { return .free }
+        guard configured else { return couponFallback(.free) }
         do {
             let info = try await Purchases.shared.restorePurchases()
-            let resolved = mapEntitlement(from: info)
+            let resolved = couponFallback(mapEntitlement(from: info))
             self.entitlement = resolved
             return resolved
         } catch {
-            return .free
+            return couponFallback(.free)
         }
     }
 
@@ -48,7 +53,20 @@ final class RevenueCatService: ObservableObject {
     }
 
     func apply(customerInfo: CustomerInfo) {
-        self.entitlement = mapEntitlement(from: customerInfo)
+        self.entitlement = couponFallback(mapEntitlement(from: customerInfo))
+    }
+
+    @discardableResult
+    func redeemCoupon(_ code: String) -> Bool {
+        guard code.trimmingCharacters(in: .whitespaces).uppercased() == "NS2026" else { return false }
+        UserDefaults.standard.set(true, forKey: Self.couponDefaultsKey)
+        entitlement = .yearly
+        return true
+    }
+
+    // If RevenueCat says free but the user redeemed the coupon, honour that.
+    private func couponFallback(_ resolved: Entitlement) -> Entitlement {
+        resolved == .free && Self.couponRedeemed ? .yearly : resolved
     }
 
     // MARK: - Helpers

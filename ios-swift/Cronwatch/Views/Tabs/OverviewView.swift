@@ -33,7 +33,9 @@ private enum OverviewPeriod: CaseIterable {
 
 struct OverviewView: View {
     @EnvironmentObject var auth: AuthService
+    @EnvironmentObject var rc: RevenueCatService
 
+    @State private var showPaywall = false
     @State private var todayEntries: [Entry] = []
     @State private var rangeEntries: [Entry] = []
     @State private var allTimeEntries: [Entry] = []
@@ -133,6 +135,9 @@ struct OverviewView: View {
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
             dayTick = Date()
             startSubscriptions()
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
         }
         .sheet(isPresented: $showGoalsEditor) {
             if let uid = auth.currentUser?.uid {
@@ -497,6 +502,10 @@ struct OverviewView: View {
 
     private func openWeekReport() {
         guard weekReportButtonEnabled else { return }
+        if rc.entitlement == .free {
+            showPaywall = true
+            return
+        }
         reportCooldownUntil = Date().addingTimeInterval(10)
         showWeekReport = true
     }

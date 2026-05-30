@@ -40,9 +40,7 @@ enum ProfileReportGenerator {
         guard let proxy = AppEnvironment.captureProxyURL else {
             throw ProfileReportGeneratorError.proxyURLMissing
         }
-        guard let token = await AuthService.shared.idToken() else {
-            throw ProfileReportGeneratorError.notSignedIn
-        }
+        let token = try await AuthService.shared.idToken()
 
         let endpoint = proxy.appendingPathComponent("profile-report")
         var request = URLRequest(url: endpoint)

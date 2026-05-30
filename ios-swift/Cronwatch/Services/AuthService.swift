@@ -11,6 +11,8 @@ enum AuthServiceError: Error, LocalizedError {
     case missingIdentityToken
     case unexpectedCredentialType
     case userMappingFailed
+    case notSignedIn
+    case unsupportedProvider
 
     var errorDescription: String? {
         switch self {
@@ -19,6 +21,8 @@ enum AuthServiceError: Error, LocalizedError {
         case .missingIdentityToken:   return "Sign-in did not return an identity token."
         case .unexpectedCredentialType: return "Unexpected Apple credential type."
         case .userMappingFailed:      return "Couldn't read the signed-in user."
+        case .notSignedIn:            return "No signed-in user found."
+        case .unsupportedProvider:    return "Sign-in provider not supported for account deletion. Please contact support."
         }
     }
 }
@@ -126,11 +130,69 @@ final class AuthService: ObservableObject {
         currentUser = nil
     }
 
-    func idToken() async -> String? {
-        guard FirebaseBootstrap.isConfigured, let user = Auth.auth().currentUser else {
-            return nil
+    func deleteAccount(presenting viewController: UIViewController) async throws {
+        guard let user = Auth.auth().currentUser else {
+            throw AuthServiceError.notSignedIn
         }
-        return try? await user.getIDToken()
+        let providerIDs = user.providerData.map { $0.providerID }
+        if providerIDs.contains("apple.com") {
+            let nonce = Self.randomNonce()
+            currentNonce = nonce
+            let hashedNonce = Self.sha256(nonce)
+            let appleIDProvider = ASAuthorizationAppleIDProvider()
+            let request = appleIDProvider.createRequest()
+            request.requestedScopes = [.fullName, .email]
+            request.nonce = hashedNonce
+            let credential: ASAuthorizationAppleIDCredential = try await withCheckedThrowingContinuation { cont in
+                let coordinator = AppleSignInCoordinator(continuation: cont)
+                self.appleCoordinator = coordinator
+                let controller = ASAuthorizationController(authorizationRequests: [request])
+                controller.delegate = coordinator
+                controller.presentationContextProvider = coordinator
+                controller.performRequests()
+            }
+            appleCoordinator = nil
+            guard let identityTokenData = credential.identityToken,
+                  let identityToken = String(data: identityTokenData, encoding: .utf8) else {
+                throw AuthServiceError.missingIdentityToken
+            }
+            let oauthCredential = OAuthProvider.appleCredential(
+                withIDToken: identityToken,
+                rawNonce: nonce,
+                fullName: credential.fullName
+            )
+            try await user.reauthenticate(with: oauthCredential)
+        } else if providerIDs.contains("google.com") {
+            guard let clientID = AppEnvironment.googleIOSClientID else {
+                throw AuthServiceError.googleClientIDMissing
+            }
+            GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+            let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: viewController)
+            guard let idToken = result.user.idToken?.tokenString else {
+                throw AuthServiceError.missingIdentityToken
+            }
+            let accessToken = result.user.accessToken.tokenString
+            let googleCredential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
+            do {
+                try await user.reauthenticate(with: googleCredential)
+            } catch {
+                GIDSignIn.sharedInstance.signOut()
+                throw error
+            }
+        } else {
+            throw AuthServiceError.unsupportedProvider
+        }
+        try await user.delete()
+        currentUser = nil
+        GIDSignIn.sharedInstance.signOut()
+        try? Auth.auth().signOut()
+    }
+
+    func idToken() async throws -> String {
+        guard FirebaseBootstrap.isConfigured, let user = Auth.auth().currentUser else {
+            throw AuthServiceError.notSignedIn
+        }
+        return try await user.getIDToken()
     }
 
     // MARK: - Helpers

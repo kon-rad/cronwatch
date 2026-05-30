@@ -15,7 +15,6 @@ struct OnboardingFlow: View {
         Goal(category: "", weeklyTargetHours: 0),
         Goal(category: "", weeklyTargetHours: 0),
     ]
-    @State private var isSaving = false
     @State private var saveTask: Task<Void, Never>?
 
     var body: some View {
@@ -84,10 +83,9 @@ struct OnboardingFlow: View {
 
     @MainActor
     private func saveAndAdvance(from currentStep: Int) {
-        guard !isSaving else { return }
-        isSaving = true
+        saveTask?.cancel()
+        step = currentStep + 1
         saveTask = Task {
-            defer { isSaving = false }
             do {
                 switch currentStep {
                 case 1:
@@ -112,8 +110,6 @@ struct OnboardingFlow: View {
                     break
                 }
             } catch {}
-            guard !Task.isCancelled else { return }
-            step = currentStep + 1
         }
     }
 

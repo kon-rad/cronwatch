@@ -19,6 +19,8 @@ struct EntryEditView: View {
     @State private var endMin: Int = 0
     @State private var didLoad = false
     @State private var showDeleteAlert = false
+    @State private var saveError: String?
+    @State private var pendingEdit: PendingEntryEdit?
     @FocusState private var focusedField: EntryEditField?
 
     private var uid: String? { auth.currentUser?.uid }
@@ -69,21 +71,30 @@ struct EntryEditView: View {
             }
         }
         .task { await loadEntry() }
-        .onChange(of: startMin) { _, newStart in
-            if newStart >= endMin {
-                endMin = min(24 * 60, newStart + 15)
-            }
-        }
-        .onChange(of: endMin) { _, newEnd in
-            if newEnd <= startMin {
-                endMin = min(24 * 60, startMin + 15)
-            }
-        }
         .alert("Delete entry?", isPresented: $showDeleteAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) { Task { await onDelete() } }
         } message: {
             Text("This cannot be undone.")
+        }
+        .alert("Could not save", isPresented: Binding(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveError ?? "An unexpected error occurred. Please try again.")
+        }
+        .sheet(item: $pendingEdit) { pending in
+            EntryEditConflictSheet(
+                category: pending.category,
+                startTime: pending.startTime,
+                endTime: pending.endTime,
+                resolutions: pending.resolutions,
+                onConfirm: { Task { await commitEdit(pending) } },
+                onCancel: { pendingEdit = nil }
+            )
+            .presentationDetents([.medium, .large])
         }
     }
 
@@ -215,37 +226,66 @@ struct EntryEditView: View {
     }
 
     private var timeRow: some View {
-        HStack(spacing: Spacing.md) {
-            TimeStepper(
-                label: "START",
-                minutes: $startMin,
-                focused: $focusedField,
-                field: .start,
-                minBound: 0,
-                maxBound: 24 * 60 - 1,
-                onMinus: {
-                    startMin = TimeUtils.snapTo15(max(0, startMin - 15))
-                },
-                onPlus: {
-                    startMin = TimeUtils.snapTo15(min(24 * 60 - 15, startMin + 15))
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.md) {
+                TimeStepper(
+                    label: "START",
+                    minutes: $startMin,
+                    focused: $focusedField,
+                    field: .start,
+                    minBound: 0,
+                    maxBound: 24 * 60 - 1,
+                    onMinus: {
+                        startMin = TimeUtils.snapTo15(max(0, startMin - 15))
+                    },
+                    onPlus: {
+                        startMin = TimeUtils.snapTo15(min(24 * 60 - 15, startMin + 15))
+                    }
+                )
+                TimeStepper(
+                    label: "END",
+                    minutes: $endMin,
+                    focused: $focusedField,
+                    field: .end,
+                    minBound: 0,
+                    maxBound: 24 * 60 - 1,
+                    onMinus: {
+                        var next = TimeUtils.snapTo15(endMin) - 15
+                        if next < 0 { next = 24 * 60 - 15 }
+                        endMin = next
+                    },
+                    onPlus: {
+                        var next = TimeUtils.snapTo15(endMin) + 15
+                        if next >= 24 * 60 { next = 0 }
+                        endMin = next
+                    }
+                )
+            }
+            HStack(spacing: Spacing.xs) {
+                Text(TimeUtils.formatDuration(durationMinutes))
+                    .font(.cwCaption)
+                    .foregroundColor(Palette.muted)
+                if spansNextDay {
+                    Text("ends next day")
+                        .font(.cwCaption.weight(.semibold))
+                        .foregroundColor(Palette.amber)
+                        .padding(.horizontal, Spacing.xs)
+                        .padding(.vertical, 2)
+                        .background(Palette.amber.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
                 }
-            )
-            TimeStepper(
-                label: "END",
-                minutes: $endMin,
-                focused: $focusedField,
-                field: .end,
-                minBound: 1,
-                maxBound: 24 * 60,
-                onMinus: {
-                    endMin = TimeUtils.snapTo15(max(startMin + 15, endMin - 15))
-                },
-                onPlus: {
-                    endMin = TimeUtils.snapTo15(min(24 * 60, endMin + 15))
-                }
-            )
+            }
+            .padding(.top, 2)
         }
         .padding(.top, Spacing.sm)
+    }
+
+    // End time at or before start means the entry crosses midnight and ends
+    // on the following day (e.g. start 10:30pm, end 1:00am).
+    private var spansNextDay: Bool { endMin <= startMin }
+
+    private var durationMinutes: Int {
+        spansNextDay ? (24 * 60 - startMin) + endMin : endMin - startMin
     }
 
     private var deleteButton: some View {
@@ -281,21 +321,67 @@ struct EntryEditView: View {
     private func onSave() async {
         guard let entry, let uid else { return }
         let start = TimeUtils.date(entryDate, withMinutesOfDay: startMin)
-        let end = TimeUtils.date(entryDate, withMinutesOfDay: max(endMin, startMin + 15))
+        // When end <= start the entry crosses midnight, so resolve the end
+        // against the following day by adding a full day of minutes.
+        let endTotalMin = spansNextDay ? endMin + 24 * 60 : endMin
+        let end = TimeUtils.date(entryDate, withMinutesOfDay: endTotalMin)
         let trimmedCategory = category.trimmingCharacters(in: .whitespaces)
         let nextCategory = trimmedCategory.isEmpty ? entry.category : trimmedCategory
+        let trimmedNote = note.trimmingCharacters(in: .whitespaces)
         do {
-            try await EntriesService.shared.updateEntry(
+            // Check whether the new range collides with other entries. If it
+            // does, surface a confirmation modal before touching anything.
+            let resolutions = try await EntriesService.shared.planEditResolutions(
+                uid: uid,
+                entryId: entry.id,
+                newStart: start,
+                newEnd: end,
+                category: nextCategory,
+                note: trimmedNote
+            )
+            if resolutions.isEmpty {
+                try await EntriesService.shared.updateEntry(
+                    uid: uid,
+                    id: entry.id,
+                    category: nextCategory,
+                    note: trimmedNote,
+                    startTime: start,
+                    endTime: end
+                )
+                dismiss()
+            } else {
+                pendingEdit = PendingEntryEdit(
+                    category: nextCategory,
+                    note: trimmedNote,
+                    startTime: start,
+                    endTime: end,
+                    resolutions: resolutions
+                )
+            }
+        } catch {
+            print("[EntryEditView] save failed: \(error)")
+            saveError = error.localizedDescription
+        }
+    }
+
+    private func commitEdit(_ pending: PendingEntryEdit) async {
+        guard let entry, let uid else { return }
+        do {
+            try await EntriesService.shared.commitEntryEdit(
                 uid: uid,
                 id: entry.id,
-                category: nextCategory,
-                note: note.trimmingCharacters(in: .whitespaces),
-                startTime: start,
-                endTime: end
+                category: pending.category,
+                note: pending.note,
+                startTime: pending.startTime,
+                endTime: pending.endTime,
+                resolutions: pending.resolutions
             )
+            pendingEdit = nil
             dismiss()
         } catch {
-            // leave the sheet open on error
+            print("[EntryEditView] save (with conflicts) failed: \(error)")
+            pendingEdit = nil
+            saveError = error.localizedDescription
         }
     }
 
@@ -305,7 +391,8 @@ struct EntryEditView: View {
             try await EntriesService.shared.deleteEntry(uid: uid, id: entry.id)
             dismiss()
         } catch {
-            // leave the sheet open on error
+            print("[EntryEditView] delete failed: \(error)")
+            saveError = error.localizedDescription
         }
     }
 }
@@ -421,6 +508,17 @@ private struct TimeStepper: View {
               (0...23).contains(h), (0...59).contains(mn) else { return nil }
         return h * 60 + mn
     }
+}
+
+// A confirmed-pending edit that overlaps other entries. Held while the
+// conflict confirmation sheet is shown; committed atomically on confirm.
+struct PendingEntryEdit: Identifiable {
+    let id = UUID()
+    let category: String
+    let note: String
+    let startTime: Date
+    let endTime: Date
+    let resolutions: [Resolution]
 }
 
 private struct RoundedCornersEntry: Shape {

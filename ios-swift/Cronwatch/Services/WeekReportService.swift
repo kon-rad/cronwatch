@@ -30,9 +30,7 @@ enum WeekReportService {
         guard let proxy = AppEnvironment.captureProxyURL else {
             throw WeekReportError.proxyURLMissing
         }
-        guard let token = await AuthService.shared.idToken() else {
-            throw WeekReportError.notSignedIn
-        }
+        let token = try await AuthService.shared.idToken()
 
         let endpoint = proxy.appendingPathComponent("week-report")
         var request = URLRequest(url: endpoint)
