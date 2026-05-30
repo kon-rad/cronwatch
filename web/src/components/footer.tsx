@@ -17,7 +17,8 @@ export function Footer() {
           { label: "Features", href: "#features" },
           { label: "How it works", href: "#how" },
           { label: "Pricing", href: "#pricing" },
-          { label: "Changelog", href: "#" },
+          { label: "API", href: "#api" },
+          { label: "API docs", href: "/docs" },
         ]} />
         <FooterCol heading="Company" links={[
           { label: "About", href: "#" },

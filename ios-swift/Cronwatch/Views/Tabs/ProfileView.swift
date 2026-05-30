@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ProfileView: View {
     @EnvironmentObject var auth: AuthService
@@ -6,6 +7,7 @@ struct ProfileView: View {
     @Environment(\.openURL) private var openURL
 
     @State private var showPaywall = false
+    @State private var showApiKeys = false
     @State private var showSignOutAlert = false
     @State private var showDeleteAlert = false
     @State private var userSettings: UserSettings = .empty
@@ -37,6 +39,16 @@ struct ProfileView: View {
                                     : String(format: "%.1fh", goal.weeklyTargetHours)
                                 return "\(Categories.label(for: goal.category)): \(hrs)/week"
                             })
+                    }
+
+                    SectionView(label: "DEVELOPER") {
+                        RowView(label: "API Keys", isFirst: true) {
+                            if rc.entitlement == .free {
+                                showPaywall = true
+                            } else {
+                                showApiKeys = true
+                            }
+                        }
                     }
 
                     SectionView(label: "ACCOUNT") {
@@ -99,6 +111,11 @@ struct ProfileView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
         }
+        .sheet(isPresented: $showApiKeys) {
+            if let uid = auth.currentUser?.uid {
+                ApiKeysView(uid: uid)
+            }
+        }
         .alert("Sign out?", isPresented: $showSignOutAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Sign out", role: .destructive) {
@@ -108,11 +125,46 @@ struct ProfileView: View {
         .alert("Delete account?", isPresented: $showDeleteAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
-                Task { await auth.signOut() }
+                Task {
+                    guard let vc = topViewController() else {
+                        ToastCenter.shared.show(
+                            message: "Unable to present sign-in. Please restart the app and try again.",
+                            kind: .error,
+                            duration: 4
+                        )
+                        return
+                    }
+                    do {
+                        let uid = auth.currentUser?.uid ?? ""
+                        try await auth.deleteAccount(presenting: vc)
+                        try await EntriesService.shared.deleteAllUserData(uid: uid)
+                        ToastCenter.shared.show(
+                            message: "Account deleted.",
+                            kind: .success,
+                            duration: 3
+                        )
+                    } catch {
+                        ToastCenter.shared.show(
+                            message: error.localizedDescription,
+                            kind: .error,
+                            duration: 4
+                        )
+                    }
+                }
             }
         } message: {
             Text("This permanently removes your entries. This cannot be undone.")
         }
+    }
+
+    private func topViewController() -> UIViewController? {
+        var vc = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?
+            .rootViewController
+        while let presented = vc?.presentedViewController { vc = presented }
+        return vc
     }
 
     private func subscribeToGoals() {

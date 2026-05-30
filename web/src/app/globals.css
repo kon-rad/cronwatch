@@ -194,6 +194,53 @@ button { font-family: inherit; }
   letter-spacing: 0.04em;
 }
 
+/* Docs — API reference prose helpers */
+.cw-p {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--color-ink);
+  margin: 0 0 16px;
+  max-width: 68ch;
+}
+.cw-list {
+  padding-left: 20px;
+  margin: 0 0 16px;
+  max-width: 68ch;
+}
+.cw-list li {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--color-ink-muted);
+  margin-bottom: 8px;
+}
+.cw-h3 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--color-ink);
+  margin: 28px 0 6px;
+}
+.cw-note {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-ink-muted);
+  background: var(--color-amber-faint);
+  border: 1px solid var(--color-amber-soft);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 12px 0 16px;
+  max-width: 68ch;
+}
+.cw-code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--color-line-soft);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--color-ink);
+  white-space: nowrap;
+}
+
 /* Blog — long-form typography (index + post) */
 .blog-eyebrow {
   font-family: var(--font-mono);

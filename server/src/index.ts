@@ -3,10 +3,12 @@ import cors from 'cors';
 import multer from 'multer';
 import { env } from './env';
 import { requireFirebaseUser, type AuthedRequest } from './auth';
+import { requireApiKey } from './apiKeyAuth';
 import { transcribe } from './deepgram';
 import { structure } from './together';
 import { weekReportHandler } from './weekReport';
 import { profileReportHandler } from './profileReport';
+import { getMeHandler, getEntriesHandler } from './userApi';
 
 const app = express();
 
@@ -60,9 +62,23 @@ app.post(
 
     try {
       console.log('[capture] uid=%s bytes=%d mime=%s ext=%s', uid, file.size, contentType, ext);
-      const transcript = await transcribe(file.buffer, contentType);
+      let transcript: string;
+      try {
+        transcript = await transcribe(file.buffer, contentType);
+        console.log('[capture] transcription ok, length=%d', transcript.length);
+      } catch (err) {
+        console.error('[capture] transcription failed:', err);
+        throw err;
+      }
 
-      const drafts = await structure(transcript, now, tz);
+      let drafts;
+      try {
+        drafts = await structure(transcript, now, tz);
+        console.log('[capture] structure ok, drafts=%d', drafts.length);
+      } catch (err) {
+        console.error('[capture] structure failed:', err);
+        throw err;
+      }
 
       res.json({
         transcript,
@@ -130,6 +146,10 @@ function mimeToExt(mime: string | undefined): string | null {
 
 app.post('/week-report', requireFirebaseUser, weekReportHandler);
 app.post('/profile-report', requireFirebaseUser, profileReportHandler);
+
+// v1 — API key authenticated data endpoints (for agent / external access)
+app.get('/v1/me', requireApiKey, getMeHandler);
+app.get('/v1/entries', requireApiKey, getEntriesHandler);
 
 app.listen(env.port, () => {
   console.log(`[cronwatch-server] listening on :${env.port}`);
