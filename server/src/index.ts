@@ -6,7 +6,6 @@ import { requireFirebaseUser, type AuthedRequest } from './auth';
 import { requireApiKey } from './apiKeyAuth';
 import { transcribe } from './deepgram';
 import { structure } from './together';
-import { weekReportHandler } from './weekReport';
 import { profileReportHandler } from './profileReport';
 import { getMeHandler, getEntriesHandler } from './userApi';
 
@@ -144,7 +143,6 @@ function mimeToExt(mime: string | undefined): string | null {
   return null;
 }
 
-app.post('/week-report', requireFirebaseUser, weekReportHandler);
 app.post('/profile-report', requireFirebaseUser, profileReportHandler);
 
 // v1 — API key authenticated data endpoints (for agent / external access)

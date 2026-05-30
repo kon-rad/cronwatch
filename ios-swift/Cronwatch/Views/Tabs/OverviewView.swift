@@ -47,8 +47,8 @@ struct OverviewView: View {
     @State private var cancelSettings: (() -> Void)?
     @State private var showGoalsEditor: Bool = false
 
-    @State private var showWeekReport: Bool = false
-    @State private var reportCooldownUntil: Date = .distantPast
+    @State private var showReportComposer: Bool = false
+    @State private var openReportDetail: ProfileReport?
 
     @State private var selectedPeriod: OverviewPeriod = .today
     @State private var dayTick: Date = Date()
@@ -146,26 +146,36 @@ struct OverviewView: View {
                 }
             }
         }
-        .sheet(isPresented: $showWeekReport) {
-            let (start, end) = weekReportRange()
-            let goalDescriptions = settings.goals
-                .filter { $0.isSet }
-                .map { goal -> String in
-                    let label = Categories.label(for: goal.category)
-                    let hrs = goal.weeklyTargetHours.truncatingRemainder(dividingBy: 1) == 0
-                        ? "\(Int(goal.weeklyTargetHours))h"
-                        : String(format: "%.1fh", goal.weeklyTargetHours)
-                    return "\(label): \(hrs)/week"
-                }
-            WeekReportView(
-                goals: goalDescriptions,
-                days: WeekReportAggregator.aggregate(entries: rangeEntries, now: dayTick),
-                weekStart: start,
-                weekEnd: end
-            ) {
-                showWeekReport = false
+        .sheet(isPresented: $showReportComposer) {
+            if let uid = auth.currentUser?.uid {
+                ReportComposerView(
+                    uid: uid,
+                    goals: reportGoals,
+                    onClose: { showReportComposer = false },
+                    onCreated: { newReport in
+                        showReportComposer = false
+                        openReportDetail = newReport
+                    }
+                )
             }
         }
+        .fullScreenCover(item: $openReportDetail) { report in
+            ReportDetailView(report: report) { openReportDetail = nil }
+        }
+    }
+
+    /// Goals formatted as the free-text strings the report generator expects,
+    /// matching the format used by ProfileReportsSection.
+    private var reportGoals: [String] {
+        settings.goals
+            .filter { $0.isSet }
+            .map { goal -> String in
+                let label = Categories.label(for: goal.category)
+                let hrs = goal.weeklyTargetHours.truncatingRemainder(dividingBy: 1) == 0
+                    ? "\(Int(goal.weeklyTargetHours))h"
+                    : String(format: "%.1fh", goal.weeklyTargetHours)
+                return "\(label): \(hrs)/week"
+            }
     }
 
     private func startSubscriptions() {
@@ -425,14 +435,6 @@ struct OverviewView: View {
         Streak.currentStreak(from: dayFlags)
     }
 
-    private var weekReportEligible: Bool {
-        streak >= 7 && settings.hasAnyGoal
-    }
-
-    private var weekReportButtonEnabled: Bool {
-        Date() >= reportCooldownUntil
-    }
-
     private var streakCard: some View {
         let flags = dayFlags
         let count = streak
@@ -462,34 +464,25 @@ struct OverviewView: View {
             }
             .padding(.top, Spacing.sm)
 
-            if weekReportEligible {
-                Button(action: openWeekReport) {
-                    HStack(spacing: Spacing.xs) {
-                        Image(systemName: "sparkles")
-                        Text("Generate week report")
-                            .fontWeight(.semibold)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .opacity(0.7)
-                    }
-                    .font(.cwBody)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, 12)
-                    .background(Palette.amber)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
-                    .opacity(weekReportButtonEnabled ? 1.0 : 0.6)
+            Button(action: openReportComposer) {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "sparkles")
+                    Text("Generate report")
+                        .fontWeight(.semibold)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .opacity(0.7)
                 }
-                .buttonStyle(.plain)
-                .disabled(!weekReportButtonEnabled)
-                .padding(.top, Spacing.md)
-            } else if streak >= 7 && !settings.hasAnyGoal {
-                Text("Set your goals to unlock your weekly report.")
-                    .font(.cwCaption)
-                    .foregroundStyle(Palette.muted)
-                    .padding(.top, Spacing.md)
+                .font(.cwBody)
+                .foregroundColor(.white)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, 12)
+                .background(Palette.amber)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             }
+            .buttonStyle(.plain)
+            .padding(.top, Spacing.md)
         }
         .padding(Spacing.md)
         .background(Palette.white)
@@ -500,22 +493,12 @@ struct OverviewView: View {
         )
     }
 
-    private func openWeekReport() {
-        guard weekReportButtonEnabled else { return }
+    private func openReportComposer() {
         if rc.entitlement == .free {
             showPaywall = true
             return
         }
-        reportCooldownUntil = Date().addingTimeInterval(10)
-        showWeekReport = true
-    }
-
-    private func weekReportRange() -> (Date, Date) {
-        let cal = Calendar.current
-        let todayStart = cal.startOfDay(for: dayTick)
-        let weekEnd = cal.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
-        let weekStart = cal.date(byAdding: .day, value: -6, to: todayStart) ?? todayStart
-        return (weekStart, weekEnd)
+        showReportComposer = true
     }
 }
 
