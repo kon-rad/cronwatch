@@ -4,7 +4,7 @@ import { z, type ZodType } from 'zod';
 import { env } from './env';
 import type { AuthedRequest } from './auth';
 import { PROFILE_REPORT_SYSTEM_PROMPT, CHART_GENERATION_SYSTEM_PROMPT } from './prompts';
-import { buildChartDatasets, combineDocument, type ChartDatasets } from './chartData';
+import { buildChartDatasets, combineDocument, aggregateTotals, formatHm, type ChartDatasets } from './chartData';
 
 const together = new Together({ apiKey: env.together.apiKey });
 
@@ -201,28 +201,4 @@ Render the 5 charts from this pre-computed dataset JSON. Use the exact labels, n
 ${JSON.stringify(datasets, null, 2)}
 
 Now produce the JSON described in the system prompt.`;
-}
-
-function aggregateTotals(
-  days: z.infer<typeof requestSchema>['days'],
-): { name: string; minutes: number }[] {
-  const totals: Record<string, number> = {};
-  const order: string[] = [];
-  for (const day of days) {
-    for (const cat of day.categories) {
-      if (totals[cat.name] === undefined) order.push(cat.name);
-      totals[cat.name] = (totals[cat.name] ?? 0) + cat.minutes;
-    }
-  }
-  return order
-    .map((name) => ({ name, minutes: totals[name] ?? 0 }))
-    .sort((a, b) => b.minutes - a.minutes);
-}
-
-function formatHm(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h${String(m).padStart(2, '0')}`;
 }

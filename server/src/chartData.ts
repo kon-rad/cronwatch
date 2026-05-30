@@ -102,7 +102,7 @@ function weekdayIndex(date: string): number {
   return (d.getUTCDay() + 6) % 7; // JS: Sun=0 -> shift so Mon=0
 }
 
-function aggregateTotals(days: DayInput[]): { name: string; minutes: number }[] {
+export function aggregateTotals(days: DayInput[]): { name: string; minutes: number }[] {
   const totals: Record<string, number> = {};
   const order: string[] = [];
   for (const day of days) {
@@ -135,7 +135,26 @@ function buildCategoryTotals(
   }));
 }
 
-function buildBuckets(days: DayInput[]): { mode: 'daily' | 'weekly'; items: Bucket[] } {
+/**
+ * Normalizes a list of segments against the allowed palette names, remapping any
+ * unknown name to 'other' and summing minutes for merged names while preserving
+ * first-seen order. Keeps bucket segment names in sync with the palette keys.
+ */
+function remapSegments(segments: DaySegment[], allowed: Set<string>): DaySegment[] {
+  const merged: Record<string, number> = {};
+  const order: string[] = [];
+  for (const seg of segments) {
+    const name = allowed.has(seg.name) ? seg.name : 'other';
+    if (merged[name] === undefined) order.push(name);
+    merged[name] = (merged[name] ?? 0) + seg.minutes;
+  }
+  return order.map((name) => ({ name, minutes: merged[name] }));
+}
+
+function buildBuckets(
+  days: DayInput[],
+  allowed: Set<string>,
+): { mode: 'daily' | 'weekly'; items: Bucket[] } {
   const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
   const segmentsOf = (day: DayInput): DaySegment[] =>
     day.categories.map((c) => ({ name: c.name, minutes: c.minutes }));
@@ -147,7 +166,7 @@ function buildBuckets(days: DayInput[]): { mode: 'daily' | 'weekly'; items: Buck
       mode: 'daily',
       items: sorted.map((d) => ({
         label: d.date.slice(5), // MM-DD
-        segments: segmentsOf(d),
+        segments: remapSegments(segmentsOf(d), allowed),
         totalMinutes: totalOf(d),
       })),
     };
@@ -159,7 +178,10 @@ function buildBuckets(days: DayInput[]): { mode: 'daily' | 'weekly'; items: Buck
     const chunk = sorted.slice(i, i + 7);
     const totals: Record<string, number> = {};
     for (const d of chunk) for (const c of d.categories) totals[c.name] = (totals[c.name] ?? 0) + c.minutes;
-    const segments = Object.entries(totals).map(([name, minutes]) => ({ name, minutes }));
+    const segments = remapSegments(
+      Object.entries(totals).map(([name, minutes]) => ({ name, minutes })),
+      allowed,
+    );
     items.push({
       label: chunk[0].date.slice(5),
       segments,
@@ -241,7 +263,7 @@ export function buildChartDatasets(days: DayInput[], goals: string[]): ChartData
     numDays,
     hasData: totalMinutes > 0,
     categoryTotals,
-    buckets: buildBuckets(days),
+    buckets: buildBuckets(days, new Set(Object.keys(palette))),
     byWeekday: buildByWeekday(days),
     goalProgress: buildGoalProgress(goals, rawTotals, spanDays(days)),
     palette,

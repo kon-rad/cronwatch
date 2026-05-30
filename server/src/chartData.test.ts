@@ -121,3 +121,21 @@ test('combineDocument removes the marker when charts are empty', () => {
   const out = combineDocument('<section>A<!-- CW_CHARTS -->B</section>', '');
   assert.equal(out, '<section>AB</section>');
 });
+
+test('bucket segments never reference a category missing from palette (>8 categories)', () => {
+  const cats: Record<string, number> = {};
+  for (let i = 0; i < 10; i++) cats[`c${i}`] = (i + 1) * 10;
+  const ds = buildChartDatasets(
+    [
+      day('2026-05-01', cats),
+      day('2026-05-02', cats),
+    ],
+    [],
+  );
+  const paletteKeys = new Set(Object.keys(ds.palette));
+  for (const item of ds.buckets.items) {
+    for (const seg of item.segments) {
+      assert.ok(paletteKeys.has(seg.name), `segment "${seg.name}" missing from palette`);
+    }
+  }
+});
