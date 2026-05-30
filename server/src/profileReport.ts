@@ -1,9 +1,10 @@
 import type { Response } from 'express';
 import Together from 'together-ai';
-import { z } from 'zod';
+import { z, type ZodType } from 'zod';
 import { env } from './env';
 import type { AuthedRequest } from './auth';
-import { PROFILE_REPORT_SYSTEM_PROMPT } from './prompts';
+import { PROFILE_REPORT_SYSTEM_PROMPT, CHART_GENERATION_SYSTEM_PROMPT } from './prompts';
+import { buildChartDatasets, combineDocument, type ChartDatasets } from './chartData';
 
 const together = new Together({ apiKey: env.together.apiKey });
 
@@ -31,14 +32,16 @@ const requestSchema = z.object({
     .max(MAX_RANGE_DAYS),
 });
 
-const responseSchema = z.object({
+const reportResponseSchema = z.object({
   title: z.string().min(1).max(120),
   html: z.string().min(20),
 });
 
-type ReportResponse = z.infer<typeof responseSchema>;
+const chartResponseSchema = z.object({
+  html: z.string().min(1),
+});
 
-const SYSTEM_PROMPT = PROFILE_REPORT_SYSTEM_PROMPT;
+type ReportResponse = z.infer<typeof reportResponseSchema>;
 
 export async function profileReportHandler(req: AuthedRequest, res: Response): Promise<void> {
   const uid = req.uid;
@@ -57,34 +60,57 @@ export async function profileReportHandler(req: AuthedRequest, res: Response): P
   const nonEmptyGoals = (goals ?? []).map((g) => g.trim()).filter((g) => g.length > 0);
   const trimmedPrompt = (customPrompt ?? '').trim();
 
-  const userPrompt = buildUserPrompt(rangeStart, rangeEnd, tz, nonEmptyGoals, trimmedPrompt, days);
+  const reportUserPrompt = buildReportUserPrompt(
+    rangeStart,
+    rangeEnd,
+    tz,
+    nonEmptyGoals,
+    trimmedPrompt,
+    days,
+  );
 
   try {
-    const completion = await together.chat.completions.create({
+    // Call #1 — prose report (with the CW_CHARTS marker).
+    const reportCompletion = await together.chat.completions.create({
       model: env.together.reportModel,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
+        { role: 'system', content: PROFILE_REPORT_SYSTEM_PROMPT },
+        { role: 'user', content: reportUserPrompt },
       ],
       temperature: 0.7,
-      max_tokens: 8000,
+      max_tokens: 3000,
       response_format: { type: 'json_object' },
     });
+    const report = parseJsonContent(reportCompletion, reportResponseSchema);
 
-    const content = completion.choices?.[0]?.message?.content;
-    if (typeof content !== 'string' || content.trim() === '') {
-      throw new Error('LLM returned empty content');
+    // Pre-compute chart datasets from the structured data.
+    const datasets = buildChartDatasets(
+      days.map((d) => ({ date: d.date, categories: d.categories })),
+      nonEmptyGoals,
+    );
+
+    // Call #2 — charts. Degrade gracefully to a chartless report on any failure.
+    let chartsHtml = '';
+    if (datasets.hasData) {
+      try {
+        const chartCompletion = await together.chat.completions.create({
+          model: env.together.reportModel,
+          messages: [
+            { role: 'system', content: CHART_GENERATION_SYSTEM_PROMPT },
+            { role: 'user', content: buildChartUserPrompt(report.html, datasets) },
+          ],
+          temperature: 0.4,
+          max_tokens: 5000,
+          response_format: { type: 'json_object' },
+        });
+        chartsHtml = parseJsonContent(chartCompletion, chartResponseSchema).html;
+      } catch (chartErr) {
+        console.error('[profile-report] chart call failed, returning chartless report:', chartErr);
+      }
     }
 
-    let raw: unknown;
-    try {
-      raw = JSON.parse(content);
-    } catch {
-      throw new Error(`LLM returned non-JSON: ${content.slice(0, 200)}`);
-    }
-
-    const validated = responseSchema.parse(raw);
-    res.json(validated satisfies ReportResponse);
+    const html = combineDocument(report.html, chartsHtml);
+    res.json({ title: report.title, html } satisfies ReportResponse);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Profile report failed';
     console.error('[profile-report] error:', err);
@@ -92,7 +118,7 @@ export async function profileReportHandler(req: AuthedRequest, res: Response): P
   }
 }
 
-function buildUserPrompt(
+function buildReportUserPrompt(
   rangeStart: string,
   rangeEnd: string,
   tz: string | undefined,
@@ -142,6 +168,37 @@ ${totalLines}
 
 Daily breakdown:
 ${dayLines}
+
+Now produce the JSON described in the system prompt.`;
+}
+
+/** Extracts and validates the JSON body from a Together chat completion. */
+function parseJsonContent<T>(
+  completion: { choices?: { message?: { content?: string | null } }[] },
+  schema: ZodType<T>,
+): T {
+  const content = completion.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || content.trim() === '') {
+    throw new Error('LLM returned empty content');
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(content);
+  } catch {
+    throw new Error(`LLM returned non-JSON: ${content.slice(0, 200)}`);
+  }
+  return schema.parse(raw);
+}
+
+/** Builds the user prompt for the chart call: the finished report + the datasets. */
+function buildChartUserPrompt(reportHtml: string, datasets: ChartDatasets): string {
+  return `Here is the written report this document already contains (for context so your captions stay consistent — do NOT repeat its text, only render charts):
+
+${reportHtml}
+
+Render the 5 charts from this pre-computed dataset JSON. Use the exact labels, numbers, and palette provided:
+
+${JSON.stringify(datasets, null, 2)}
 
 Now produce the JSON described in the system prompt.`;
 }
