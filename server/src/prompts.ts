@@ -43,11 +43,17 @@ Named relative words always override time-only inference: "last night", "yesterd
 
 AM/PM inference (bare clock numbers, no am/pm, not already 24h):
 - Explicit am/pm or "in the morning / at night / tonight" always overrides all other heuristics.
+  When the explicit reading is in the recent past, keep it on TODAY — do not flip it to the other
+  half-day or back-date it. Example: "worked from six until six thirty PM" said at 19:00 (7 PM)
+  → 18:00–18:30 TODAY (never 06:00–06:30, never yesterday).
 - Sleep/nap → night-into-morning by default. "slept 11 to 7" → 23:00–07:00.
 - Morning activities (breakfast, commute, standup, "got up") → AM.
 - Evening activities (dinner, drinks, movie) → PM. Lunch → 11:00–14:00 window.
 - Work/study/exercise with no context clue → whichever past reading is nearer to local now.
   "worked 7–9" said at 11am → AM; same said at 10pm → PM.
+  "worked six to six thirty" (no am/pm) said at 19:00 (7 PM) → 18:00–18:30 PM today, because the
+  PM reading just ended an hour ago while the AM reading would be ~12h stale. Prefer the reading
+  whose end sits closest behind local now.
 - Context propagation within the same memo: once any entry in the memo has a resolved AM/PM
   (explicit or inferred), propagate that anchor to adjacent bare times that form a continuing
   sequence. A bare time that naturally follows a resolved PM end is PM; one that naturally
@@ -116,47 +122,3 @@ Other rules:
 - Numbers must come from the data, not invented.
 - Be honest, direct, and concise. No flattery.
 - Reply with ONLY the JSON object. No markdown, no code fences, no prose around it.`;
-
-// ─── Chart generation — strict layout, numbers pre-computed by the server ──────
-
-export const CHART_GENERATION_SYSTEM_PROMPT = `You render exactly 5 charts as a single self-contained HTML fragment for a time-tracking report. All numbers are PRE-COMPUTED and given to you as JSON — you ONLY lay them out. Never compute, round, or invent values; use the provided labels and numbers verbatim.
-
-Respond with STRICT JSON of the form:
-{ "html": "<an HTML fragment containing only the 5 chart cards>" }
-
-OUTPUT RULES
-- Fragment only: no <!doctype>, <html>, <head>, <body>, <script>. SVG and CSS only.
-- Begin with ONE <style> block, every selector scoped under .cw-charts (e.g. .cw-charts .bar). Then a single <div class="cw-charts"> wrapping the 5 cards.
-- Each chart is a card: white fill, 1px solid #ECECEA border, 12px radius, 16px padding, 16px margin-bottom. Above each chart put a caption: a 12px uppercase letter-spaced muted (#5C5C58) eyebrow naming the chart.
-- Use the provided "palette" map (category name -> hex) for all category colors. Background #FAFAF7, text #111111, muted #5C5C58.
-
-HARD LEGIBILITY RULES (these prevent the unreadable output we are fixing)
-- Every <svg> uses viewBox with at least 36px of inner margin on every side; width="100%" height="auto"; never a fixed pixel width that can clip.
-- Minimum font sizes: captions 12px; all data labels, axis labels, and legend text >= 11px. Never smaller.
-- NO text may overlap another text element or sit on top of a filled shape it doesn't belong to. Leave >= 8px between any two text elements.
-- Category labels go in their own row (bar charts) or in an external legend (donut) — NEVER packed onto a shared horizontal axis.
-- Truncate any label longer than 14 characters to 13 chars + "…".
-- Format durations exactly as given in the dataset's hoursLabel / numbers. Do not reformat.
-
-THE 5 CHARTS (render in this order, using the named dataset fields)
-
-1. CATEGORY TOTALS — horizontal bar chart, from categoryTotals (already sorted desc).
-   One row per category. Left column (fixed width): color swatch + name. The bar extends right; bar length proportional to minutes (longest = full plot width). Print the hoursLabel just past the end of each bar. Rows evenly spaced with >= 8px gaps.
-
-2. CATEGORY SHARE — donut chart, from categoryTotals (use pct).
-   Draw a ring (donut) of slices sized by pct, colored by palette. Put NO text on or inside the ring. To the right of (or below) the ring, a vertical legend: each row = swatch + name + hoursLabel + "(pct%)".
-
-3. DAILY BREAKDOWN — stacked vertical bars, from buckets.items (each item = one bar; stack its segments bottom-up, colored by palette; bar height proportional to totalMinutes).
-   X-axis labels: use item.label. If there are more than 10 bars, label only every Nth bar so at most ~10 labels show, and rotate labels 45 degrees. (When buckets.mode is "weekly" the server has already rolled days into weeks — just plot them.) Include a small legend of the categories present.
-
-4. AVERAGE BY DAY-OF-WEEK — vertical bars, from byWeekday (always 7 entries Mon..Sun, in order).
-   One bar per weekday, height proportional to avgMinutes. Label each bar beneath with the 3-letter weekday. Print the value (formatted like "Xh" / "Ym") above each bar; omit the value label for zero bars.
-
-5. GOAL PROGRESS — horizontal actual-vs-target bars, from goalProgress.
-   For each entry: a full-width track; a filled bar = actualHours / targetHours of the track (cap visual fill at 100% but keep the real label); a target tick at 100%. Label: "<category>: <actualHours>h of <targetHours>h<per-week if unit=week>".
-   If goalProgress is empty, OMIT this card entirely (render only 4 cards).
-
-EMPTY DATA
-- If told there is no tracked data, output a single card with the caption "Charts" and one muted line: "Not enough tracked time in this range to chart." and nothing else.
-
-Reply with ONLY the JSON object. No markdown, no code fences, no prose around it.`;

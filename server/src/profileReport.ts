@@ -3,8 +3,9 @@ import Together from 'together-ai';
 import { z, type ZodType } from 'zod';
 import { env } from './env';
 import type { AuthedRequest } from './auth';
-import { PROFILE_REPORT_SYSTEM_PROMPT, CHART_GENERATION_SYSTEM_PROMPT } from './prompts';
-import { buildChartDatasets, combineDocument, aggregateTotals, formatHm, type ChartDatasets } from './chartData';
+import { PROFILE_REPORT_SYSTEM_PROMPT } from './prompts';
+import { buildChartDatasets, combineDocument, aggregateTotals, formatHm } from './chartData';
+import { renderCharts } from './chartRender';
 
 const together = new Together({ apiKey: env.together.apiKey });
 
@@ -35,10 +36,6 @@ const requestSchema = z.object({
 const reportResponseSchema = z.object({
   title: z.string().min(1).max(120),
   html: z.string().min(20),
-});
-
-const chartResponseSchema = z.object({
-  html: z.string().min(1),
 });
 
 type ReportResponse = z.infer<typeof reportResponseSchema>;
@@ -89,25 +86,8 @@ export async function profileReportHandler(req: AuthedRequest, res: Response): P
       nonEmptyGoals,
     );
 
-    // Call #2 — charts. Degrade gracefully to a chartless report on any failure.
-    let chartsHtml = '';
-    if (datasets.hasData) {
-      try {
-        const chartCompletion = await together.chat.completions.create({
-          model: env.together.reportModel,
-          messages: [
-            { role: 'system', content: CHART_GENERATION_SYSTEM_PROMPT },
-            { role: 'user', content: buildChartUserPrompt(report.html, datasets) },
-          ],
-          temperature: 0.4,
-          max_tokens: 5000,
-          response_format: { type: 'json_object' },
-        });
-        chartsHtml = parseJsonContent(chartCompletion, chartResponseSchema).html;
-      } catch (chartErr) {
-        console.error('[profile-report] chart call failed, returning chartless report:', chartErr);
-      }
-    }
+    // Charts are rendered deterministically in code (no LLM call).
+    const chartsHtml = datasets.hasData ? renderCharts(datasets) : '';
 
     const html = combineDocument(report.html, chartsHtml);
     res.json({ title: report.title, html } satisfies ReportResponse);
@@ -188,17 +168,4 @@ function parseJsonContent<T>(
     throw new Error(`LLM returned non-JSON: ${content.slice(0, 200)}`);
   }
   return schema.parse(raw);
-}
-
-/** Builds the user prompt for the chart call: the finished report + the datasets. */
-function buildChartUserPrompt(reportHtml: string, datasets: ChartDatasets): string {
-  return `Here is the written report this document already contains (for context so your captions stay consistent — do NOT repeat its text, only render charts):
-
-${reportHtml}
-
-Render the 5 charts from this pre-computed dataset JSON. Use the exact labels, numbers, and palette provided:
-
-${JSON.stringify(datasets, null, 2)}
-
-Now produce the JSON described in the system prompt.`;
 }

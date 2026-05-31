@@ -37,6 +37,7 @@ export interface Bucket {
 export interface WeekdayAvg {
   weekday: string; // Mon..Sun
   avgMinutes: number;
+  hoursLabel: string;
 }
 
 export interface GoalProgress {
@@ -199,10 +200,14 @@ function buildByWeekday(days: DayInput[]): WeekdayAvg[] {
     sums[idx] += day.categories.reduce((s, c) => s + c.minutes, 0);
     counts[idx] += 1;
   }
-  return WEEKDAYS.map((weekday, i) => ({
-    weekday,
-    avgMinutes: counts[i] === 0 ? 0 : Math.round((sums[i] / counts[i]) * 10) / 10,
-  }));
+  return WEEKDAYS.map((weekday, i) => {
+    const avgMinutes = counts[i] === 0 ? 0 : Math.round((sums[i] / counts[i]) * 10) / 10;
+    return {
+      weekday,
+      avgMinutes,
+      hoursLabel: formatHm(Math.round(avgMinutes)),
+    };
+  });
 }
 
 function parseGoalTarget(goal: string): { hours: number; unit: 'week' | 'total' } | null {
