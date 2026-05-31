@@ -1,11 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildChartDatasets, type DayInput } from './chartData';
+import { buildChartDatasets, type DayInput, type EntryInput } from './chartData';
 import { renderCharts } from './chartRender';
 
 function day(date: string, cats: Record<string, number>): DayInput {
   return { date, categories: Object.entries(cats).map(([name, minutes]) => ({ name, minutes })) };
 }
+
+const SAMPLE_ENTRIES: EntryInput[] = [
+  { category: 'work', startTime: '2026-05-04T09:00:00Z', endTime: '2026-05-04T12:00:00Z' },
+  { category: 'work', startTime: '2026-05-05T09:00:00Z', endTime: '2026-05-05T11:30:00Z' },
+];
 
 /** Count occurrences of class="cw-card" in the fragment. */
 function countCards(html: string): number {
@@ -45,23 +50,58 @@ test('every categoryTotals name, hoursLabel, and pct appears in the output', () 
   }
 });
 
-test('each non-zero weekday hoursLabel appears; zero weekdays print no value', () => {
-  // Single Friday with data; all other weekdays are zero.
-  const ds = buildChartDatasets([day('2026-05-01', { work: 100 })], []);
+test('heatmap card shows all 7 weekday labels, hour axis, and scale legend', () => {
+  const days = [
+    day('2026-05-04', { work: 180 }),
+    day('2026-05-05', { work: 150 }),
+  ];
+  const ds = buildChartDatasets(days, [], SAMPLE_ENTRIES);
   const html = renderCharts(ds);
 
-  const fri = ds.byWeekday.find((w) => w.weekday === 'Fri')!;
-  assert.ok(fri.avgMinutes > 0);
-  assert.ok(html.includes(fri.hoursLabel), 'Friday hoursLabel missing');
-
-  // Zero weekdays: the value text node "0m" must not be printed as a bar value.
-  // The weekday axis labels (Mon..Sun) are always present, but no "0m" value.
-  for (const w of ds.byWeekday) {
-    if (w.avgMinutes === 0) {
-      // hoursLabel for zero is "0m" — ensure it is not rendered as a value label.
-      assert.ok(!html.includes('>0m<'), 'zero-weekday value label should be omitted');
-    }
+  assert.ok(html.includes("WHEN YOU'RE ACTIVE"), 'heatmap eyebrow missing');
+  for (const wd of ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']) {
+    assert.ok(html.includes(`>${wd}<`), `weekday label "${wd}" missing`);
   }
+  for (const tick of ['12a', '6a', '12p', '6p']) {
+    assert.ok(html.includes(`>${tick}<`), `hour tick "${tick}" missing`);
+  }
+  assert.ok(html.includes('avg per day · darker = more time'), 'scale legend text missing');
+});
+
+test('strip card shows hour ticks, at least one date label, and a legend', () => {
+  const days = [
+    day('2026-05-04', { work: 180 }),
+    day('2026-05-05', { work: 150 }),
+  ];
+  const ds = buildChartDatasets(days, [], SAMPLE_ENTRIES);
+  const html = renderCharts(ds);
+
+  assert.ok(html.includes('YOUR DAYS'), 'strip eyebrow missing');
+  for (const tick of ['12a', '6a', '12p', '6p']) {
+    assert.ok(html.includes(`>${tick}<`), `strip hour tick "${tick}" missing`);
+  }
+  assert.ok(html.includes('>05-04<') || html.includes('>05-05<'), 'date label missing');
+  assert.ok(html.includes('>work<'), 'category legend missing');
+});
+
+test('category card shows the units caption', () => {
+  const ds = buildChartDatasets([day('2026-05-01', { work: 120 })], []);
+  const html = renderCharts(ds);
+  assert.ok(html.includes('Total time tracked per category'), 'units caption missing');
+});
+
+test('output uses new captions and no longer emits the removed cards', () => {
+  const ds = buildChartDatasets(
+    [day('2026-05-04', { work: 180 }), day('2026-05-05', { work: 150 })],
+    [],
+    SAMPLE_ENTRIES,
+  );
+  const html = renderCharts(ds);
+  assert.ok(html.includes("WHEN YOU'RE ACTIVE"));
+  assert.ok(html.includes('YOUR DAYS'));
+  assert.ok(html.includes('CATEGORY BREAKDOWN'));
+  assert.ok(!html.includes('DAILY TIMELINE'), 'old DAILY TIMELINE card still present');
+  assert.ok(!html.includes('AVERAGE BY DAY OF WEEK'), 'old weekday card still present');
 });
 
 test('weekly goal label appears as "<cat>: <actual>h of <target>h/wk"', () => {
@@ -94,20 +134,21 @@ test('output contains no NaN or Infinity substring', () => {
   assert.ok(!html.includes('Infinity'), 'output contains Infinity');
 });
 
-test('a >31-day range produces weekly buckets (one bar per week)', () => {
-  const days = Array.from({ length: 35 }, (_, i) => {
+test('output never contains NaN/Infinity/undefined even with entries', () => {
+  const days = Array.from({ length: 14 }, (_, i) => {
     const d = new Date(Date.UTC(2026, 4, 1) + i * 86400000);
-    return day(d.toISOString().slice(0, 10), { work: 60 });
+    return day(d.toISOString().slice(0, 10), { work: 120, sleep: 360 });
   });
-  const ds = buildChartDatasets(days, []);
-  assert.equal(ds.buckets.mode, 'weekly');
+  const entries: EntryInput[] = days.map((d) => ({
+    category: 'work',
+    startTime: `${d.date}T09:00:00Z`,
+    endTime: `${d.date}T17:00:00Z`,
+  }));
+  const ds = buildChartDatasets(days, ['Work 40 hours per week'], entries);
   const html = renderCharts(ds);
-  // One <rect> bar segment per weekly bucket (each week has a single 'work' segment).
-  // Verify each weekly bucket label appears verbatim in the timeline card.
-  for (const item of ds.buckets.items) {
-    assert.ok(html.includes(`>${item.label}<`), `weekly bucket label "${item.label}" missing`);
-  }
-  assert.ok(ds.buckets.items.length <= 6);
+  assert.ok(!html.includes('NaN'), 'output contains NaN');
+  assert.ok(!html.includes('Infinity'), 'output contains Infinity');
+  assert.ok(!html.includes('undefined'), 'output contains undefined');
 });
 
 test('empty/all-zero chart data renders a muted "Not enough data to chart." line', () => {

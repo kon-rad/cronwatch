@@ -48,6 +48,43 @@ export interface GoalProgress {
   unit: 'week' | 'total';
 }
 
+export interface EntryInput {
+  category: string;
+  startTime: string; // ISO 8601 with offset, e.g. "2026-05-08T09:00:00-07:00"
+  endTime: string; // ISO 8601 with offset
+}
+
+/** A single entry clipped to one local calendar day. */
+export interface DaySplitSegment {
+  date: string; // yyyy-mm-dd (local)
+  category: string;
+  startMin: number; // minute-of-day [0,1440]
+  endMin: number; // minute-of-day [0,1440]
+}
+
+export interface HeatmapData {
+  /** [7][24] average minutes; rows Mon=0..Sun=6, cols hour 0..23. */
+  cells: number[][];
+  maxAvg: number;
+}
+
+export interface StripSegment {
+  category: string;
+  color: string;
+  startMin: number;
+  endMin: number;
+}
+
+export interface StripDay {
+  date: string; // yyyy-mm-dd
+  label: string; // MM-DD
+  segments: StripSegment[];
+}
+
+export interface StripData {
+  days: StripDay[];
+}
+
 export interface ChartDatasets {
   totalMinutes: number;
   numDays: number;
@@ -57,6 +94,8 @@ export interface ChartDatasets {
   byWeekday: WeekdayAvg[];
   goalProgress: GoalProgress[];
   palette: Record<string, string>;
+  heatmap: HeatmapData;
+  strip: StripData;
 }
 
 const TOP_N = 8;
@@ -64,7 +103,6 @@ const DAILY_MAX_DAYS = 31;
 
 const PALETTE: Record<string, string> = {
   work: '#3D6F8E',
-  deep: '#4F7A6A',
   meeting: '#B07845',
   study: '#8A6FA3',
   exercise: '#C8412C',
@@ -255,7 +293,156 @@ function buildGoalProgress(
   return out;
 }
 
-export function buildChartDatasets(days: DayInput[], goals: string[]): ChartDatasets {
+/**
+ * Parse the wall-clock prefix `YYYY-MM-DDTHH:MM` of an ISO 8601 string. The text
+ * before any timezone offset IS the user's local wall-clock time, so we use it
+ * directly — no timezone math. Returns null for malformed input.
+ */
+function parseWallClock(iso: string): { date: string; minute: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso);
+  if (!m) return null;
+  const [, yy, mo, dd, hh, mm] = m;
+  const month = Number(mo);
+  const dayNum = Number(dd);
+  const hour = Number(hh);
+  const min = Number(mm);
+  if (month < 1 || month > 12) return null;
+  if (dayNum < 1 || dayNum > 31) return null;
+  if (hour > 23 || min > 59) return null;
+  return { date: `${yy}-${mo}-${dd}`, minute: hour * 60 + min };
+}
+
+/** Add `n` days to a yyyy-mm-dd date string (UTC math to avoid tz drift). */
+function addDays(date: string, n: number): string {
+  const t = Date.parse(`${date}T00:00:00Z`) + n * 86400000;
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+/**
+ * Split each entry into per-local-day segments at local midnight. Each segment is
+ * `{ date, category, startMin, endMin }` with minute-of-day in [0,1440]. Entries
+ * with malformed start/end strings or where end <= start are skipped.
+ */
+export function splitEntriesByLocalDay(entries: EntryInput[]): DaySplitSegment[] {
+  const out: DaySplitSegment[] = [];
+  for (const e of entries) {
+    const start = parseWallClock(e.startTime);
+    const end = parseWallClock(e.endTime);
+    if (!start || !end) continue;
+
+    const startAbs = Date.parse(`${start.date}T00:00:00Z`) + start.minute * 60000;
+    const endAbs = Date.parse(`${end.date}T00:00:00Z`) + end.minute * 60000;
+    if (endAbs <= startAbs) continue;
+
+    let cursorDate = start.date;
+    let cursorMin = start.minute;
+    // Walk day by day until we reach the end date.
+    // Bound the loop defensively to avoid runaway on pathological input.
+    let guard = 0;
+    while (guard++ < 4000) {
+      const isLastDay = cursorDate === end.date;
+      const segEnd = isLastDay ? end.minute : 1440;
+      if (segEnd > cursorMin) {
+        out.push({
+          date: cursorDate,
+          category: e.category,
+          startMin: cursorMin,
+          endMin: segEnd,
+        });
+      }
+      if (isLastDay) break;
+      cursorDate = addDays(cursorDate, 1);
+      cursorMin = 0;
+    }
+  }
+  return out;
+}
+
+/**
+ * Allocate a segment's minutes across the hour buckets [0,23] it overlaps.
+ * A 09:00–10:30 segment contributes 60 to hour 9 and 30 to hour 10.
+ */
+function allocateToHours(startMin: number, endMin: number, acc: number[]): void {
+  let cursor = startMin;
+  while (cursor < endMin) {
+    const hour = Math.floor(cursor / 60);
+    if (hour > 23) break;
+    const hourEnd = (hour + 1) * 60;
+    const segEnd = Math.min(endMin, hourEnd);
+    acc[hour] += segEnd - cursor;
+    cursor = segEnd;
+  }
+}
+
+/**
+ * Time-of-day heatmap. Cell value = total minutes landing in that (weekday,hour)
+ * across the range, divided by the number of distinct dates in `days` falling on
+ * that weekday (so two Mondays each with 60m at 09:00 => cell[Mon][9] = 60).
+ * All divisions guarded; never produces NaN/Infinity.
+ */
+export function buildHeatmap(entries: EntryInput[], days: DayInput[]): HeatmapData {
+  // Distinct weekday-occurrence counts from the days array (each date once).
+  const occ = new Array(7).fill(0);
+  const seenDates = new Set<string>();
+  for (const d of days) {
+    if (seenDates.has(d.date)) continue;
+    seenDates.add(d.date);
+    occ[weekdayIndex(d.date)] += 1;
+  }
+
+  // Total minutes per [weekday][hour].
+  const totals: number[][] = Array.from({ length: 7 }, () => new Array(24).fill(0));
+  for (const seg of splitEntriesByLocalDay(entries)) {
+    const wd = weekdayIndex(seg.date);
+    allocateToHours(seg.startMin, seg.endMin, totals[wd]);
+  }
+
+  let maxAvg = 0;
+  const cells: number[][] = totals.map((row, wd) =>
+    row.map((total) => {
+      const count = occ[wd];
+      const avg = count > 0 ? total / count : 0;
+      if (avg > maxAvg) maxAvg = avg;
+      return avg;
+    }),
+  );
+
+  return { cells, maxAvg };
+}
+
+/**
+ * Daily rhythm strip. One entry per local day present in the entries' split,
+ * sorted ascending by date, each carrying its category-colored clock segments.
+ */
+export function buildStrip(entries: EntryInput[], palette: Record<string, string>): StripData {
+  const byDate = new Map<string, StripSegment[]>();
+  for (const seg of splitEntriesByLocalDay(entries)) {
+    const color = palette[seg.category] ?? OTHER_COLOR;
+    const list = byDate.get(seg.date) ?? [];
+    list.push({
+      category: seg.category,
+      color,
+      startMin: seg.startMin,
+      endMin: seg.endMin,
+    });
+    byDate.set(seg.date, list);
+  }
+
+  const dates = [...byDate.keys()].sort((a, b) => a.localeCompare(b));
+  return {
+    days: dates.map((date) => ({
+      date,
+      label: date.slice(5), // MM-DD
+      segments: byDate.get(date) ?? [],
+    })),
+  };
+}
+
+export function buildChartDatasets(
+  days: DayInput[],
+  goals: string[],
+  entries: EntryInput[] = [],
+): ChartDatasets {
   const rawTotals = aggregateTotals(days);
   const totalMinutes = rawTotals.reduce((sum, t) => sum + t.minutes, 0);
   const numDays = days.length;
@@ -272,6 +459,8 @@ export function buildChartDatasets(days: DayInput[], goals: string[]): ChartData
     byWeekday: buildByWeekday(days),
     goalProgress: buildGoalProgress(goals, rawTotals, spanDays(days)),
     palette,
+    heatmap: buildHeatmap(entries, days),
+    strip: buildStrip(entries, palette),
   };
 }
 

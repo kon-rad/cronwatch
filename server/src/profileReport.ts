@@ -31,6 +31,16 @@ const requestSchema = z.object({
     )
     .min(1)
     .max(MAX_RANGE_DAYS),
+  entries: z
+    .array(
+      z.object({
+        category: z.string().min(1).max(40),
+        startTime: z.string(),
+        endTime: z.string(),
+      }),
+    )
+    .max(20000)
+    .optional(),
 });
 
 const reportResponseSchema = z.object({
@@ -84,6 +94,7 @@ export async function profileReportHandler(req: AuthedRequest, res: Response): P
     const datasets = buildChartDatasets(
       days.map((d) => ({ date: d.date, categories: d.categories })),
       nonEmptyGoals,
+      parsed.data.entries ?? [],
     );
 
     // Charts are rendered deterministically in code (no LLM call).

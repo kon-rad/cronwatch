@@ -120,7 +120,8 @@ final class ReportGenerationCoordinator {
                 rangeEnd: report.rangeEnd,
                 goals: goals,
                 customPrompt: report.customPrompt,
-                days: days
+                days: days,
+                entries: entries
             )
             return .success(title: generated.title, html: generated.html)
         } catch {

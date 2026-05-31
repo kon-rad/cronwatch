@@ -35,7 +35,8 @@ enum ProfileReportGenerator {
         rangeEnd: Date,
         goals: [String],
         customPrompt: String?,
-        days: [DayAggregate]
+        days: [DayAggregate],
+        entries: [Entry]
     ) async throws -> GeneratedReport {
         guard let proxy = AppEnvironment.captureProxyURL else {
             throw ProfileReportGeneratorError.proxyURLMissing
@@ -55,6 +56,10 @@ enum ProfileReportGenerator {
         isoDay.locale = Locale(identifier: "en_US_POSIX")
         isoDay.dateFormat = "yyyy-MM-dd"
 
+        // ISO 8601 with timezone offset (no fractional seconds). The server
+        // recovers local wall-clock time from the offset prefix.
+        let iso = ISO8601DateFormatter()
+
         var payload: [String: Any] = [
             "rangeStart": isoDay.string(from: rangeStart),
             "rangeEnd": isoDay.string(from: rangeEnd),
@@ -65,6 +70,13 @@ enum ProfileReportGenerator {
                     "categories": day.categories.map { cat in
                         ["name": cat.name, "minutes": cat.minutes]
                     },
+                ]
+            },
+            "entries": entries.map { entry in
+                [
+                    "category": entry.category,
+                    "startTime": iso.string(from: entry.startTime),
+                    "endTime": iso.string(from: entry.endTime),
                 ]
             },
         ]

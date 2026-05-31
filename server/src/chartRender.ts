@@ -16,7 +16,13 @@
  *   "Not enough data to chart." line instead of an empty/NaN SVG.
  */
 
-import type { ChartDatasets, CategoryTotal, Bucket, WeekdayAvg, GoalProgress } from './chartData';
+import type {
+  ChartDatasets,
+  CategoryTotal,
+  GoalProgress,
+  HeatmapData,
+  StripData,
+} from './chartData';
 
 const VIEW_W = 340;
 const EMPTY_LINE = 'Not enough data to chart.';
@@ -41,8 +47,13 @@ function n(x: number): string {
   return String(Math.round(x * 100) / 100);
 }
 
+/**
+ * Card captions are developer-controlled constants (e.g. "WHEN YOU'RE ACTIVE"),
+ * never user input, so they are emitted verbatim. An apostrophe is valid raw in
+ * element text content and we want it to survive round-trips for tests/PDF.
+ */
 function card(caption: string, body: string): string {
-  return `<div class="cw-card"><div class="cw-eyebrow">${esc(caption)}</div>${body}</div>`;
+  return `<div class="cw-card"><div class="cw-eyebrow">${caption}</div>${body}</div>`;
 }
 
 function emptyCard(caption: string): string {
@@ -81,52 +92,159 @@ function categoryBreakdownCard(totals: CategoryTotal[]): string {
 
   return card(
     'CATEGORY BREAKDOWN',
-    `<svg viewBox="0 0 ${VIEW_W} ${height}" width="100%" role="img" aria-label="Category breakdown">${rows}</svg>`,
+    `<p class="cw-caption">Total time tracked per category</p><svg viewBox="0 0 ${VIEW_W} ${height}" width="100%" role="img" aria-label="Category breakdown">${rows}</svg>`,
   );
 }
 
-// ─── 2. DAILY TIMELINE ─────────────────────────────────────────────────────────
+// ─── 1. TIME-OF-DAY HEATMAP ────────────────────────────────────────────────────
 
-function dailyTimelineCard(
-  buckets: { mode: 'daily' | 'weekly'; items: Bucket[] },
-  totals: CategoryTotal[],
-  palette: Record<string, string>,
-): string {
-  const items = buckets.items;
-  const maxTotal = items.length === 0 ? 0 : Math.max(...items.map((b) => b.totalMinutes));
-  if (items.length === 0 || maxTotal <= 0) return emptyCard('DAILY TIMELINE');
+const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const HOUR_TICKS: { col: number; label: string }[] = [
+  { col: 0, label: '12a' },
+  { col: 6, label: '6a' },
+  { col: 12, label: '12p' },
+  { col: 18, label: '6p' },
+];
 
-  const top = 12;
-  const plotH = 150;
+/** Linear interpolate between two #rrggbb hex colors; t in [0,1]. */
+function lerpHex(from: string, to: string, t: number): string {
+  const clamp = Math.max(0, Math.min(1, t));
+  const fr = parseInt(from.slice(1, 3), 16);
+  const fg = parseInt(from.slice(3, 5), 16);
+  const fb = parseInt(from.slice(5, 7), 16);
+  const tr = parseInt(to.slice(1, 3), 16);
+  const tg = parseInt(to.slice(3, 5), 16);
+  const tb = parseInt(to.slice(5, 7), 16);
+  const r = Math.round(fr + (tr - fr) * clamp);
+  const g = Math.round(fg + (tg - fg) * clamp);
+  const b = Math.round(fb + (tb - fb) * clamp);
+  const hx = (v: number): string => v.toString(16).padStart(2, '0');
+  return `#${hx(r)}${hx(g)}${hx(b)}`;
+}
+
+const HEAT_EMPTY = '#F4F4F1';
+const HEAT_LIGHT = '#EEF3F1';
+const HEAT_DARK = '#3D6F8E';
+
+function heatColor(value: number, maxAvg: number): string {
+  if (value <= 0 || maxAvg <= 0) return HEAT_EMPTY;
+  return lerpHex(HEAT_LIGHT, HEAT_DARK, value / maxAvg);
+}
+
+function heatmapCard(heatmap: HeatmapData): string {
+  const { cells, maxAvg } = heatmap;
+  if (cells.length === 0 || maxAvg <= 0) return emptyCard("WHEN YOU'RE ACTIVE");
+
+  const gutter = 28; // left gutter for weekday row labels
+  const top = 6;
+  const cols = 24;
+  const rows = 7;
+  const plotW = VIEW_W - gutter - 6;
+  const cellW = plotW / cols;
+  const cellH = 16;
+  const gridTop = top;
+  const axisBandH = 16; // hour labels under the grid
+  const legendBandH = 22;
+  const height = gridTop + rows * cellH + axisBandH + legendBandH + 6;
+
+  const rowLabels = WEEKDAY_LABELS.map((label, r) => {
+    const cy = gridTop + r * cellH + cellH / 2 + 4;
+    return `<text x="4" y="${n(cy)}" font-size="12" fill="#5C5C58">${esc(label)}</text>`;
+  }).join('');
+
+  const rects = cells
+    .map((row, r) =>
+      row
+        .map((value, c) => {
+          const x = gutter + c * cellW;
+          const y = gridTop + r * cellH;
+          const fill = heatColor(value, maxAvg);
+          return `<rect x="${n(x)}" y="${n(y)}" width="${n(cellW)}" height="${cellH}" fill="${fill}"/>`;
+        })
+        .join(''),
+    )
+    .join('');
+
+  const axisY = gridTop + rows * cellH + 12;
+  const hourLabels =
+    HOUR_TICKS.map((t) => {
+      const x = gutter + t.col * cellW;
+      return `<text x="${n(x)}" y="${n(axisY)}" font-size="12" fill="#5C5C58">${esc(t.label)}</text>`;
+    }).join('') +
+    `<text x="${n(gutter + plotW)}" y="${n(axisY)}" font-size="12" fill="#5C5C58" text-anchor="end">12a</text>`;
+
+  // Scale legend: a few swatches light -> dark with a note.
+  const legendY = axisY + 12;
+  const swatchN = 5;
+  const swatchW = 14;
+  const swatches = Array.from({ length: swatchN }, (_, i) => {
+    const t = i / Math.max(1, swatchN - 1);
+    const fill = lerpHex(HEAT_LIGHT, HEAT_DARK, t);
+    const x = gutter + i * (swatchW + 2);
+    return `<rect x="${n(x)}" y="${n(legendY - 9)}" width="${swatchW}" height="10" fill="${fill}"/>`;
+  }).join('');
+  const legendTextX = gutter + swatchN * (swatchW + 2) + 6;
+  const legendText = `<text x="${n(legendTextX)}" y="${n(legendY)}" font-size="12" fill="#5C5C58">avg per day · darker = more time</text>`;
+
+  return card(
+    "WHEN YOU'RE ACTIVE",
+    `<svg viewBox="0 0 ${VIEW_W} ${n(height)}" width="100%" role="img" aria-label="When you're active">${rects}${rowLabels}${hourLabels}${swatches}${legendText}</svg>`,
+  );
+}
+
+// ─── 2. DAILY RHYTHM STRIP ─────────────────────────────────────────────────────
+
+const STRIP_HOUR_TICKS: { min: number; label: string }[] = [
+  { min: 0, label: '12a' },
+  { min: 360, label: '6a' },
+  { min: 720, label: '12p' },
+  { min: 1080, label: '6p' },
+  { min: 1440, label: '12a' },
+];
+
+function dailyStripCard(strip: StripData, totals: CategoryTotal[]): string {
+  const days = strip.days;
+  if (days.length === 0) return emptyCard('YOUR DAYS');
+
+  const gutter = 28; // hour ticks + gridlines
+  const top = 8;
+  const plotH = 180;
   const axisY = top + plotH;
-  const labelBandH = 44; // room for rotated labels
+  const labelBandH = 44; // room for rotated date labels
   const legendRowH = 18;
 
-  // Legend uses category names/colors present in categoryTotals.
   const legendCats = totals.filter((t) => t.minutes > 0);
   const legendH = legendCats.length === 0 ? 0 : 8 + legendRowH * legendCats.length;
   const height = axisY + labelBandH + legendH + 8;
 
-  const innerX = 8;
-  const innerW = VIEW_W - innerX * 2;
-  const slot = innerW / items.length;
-  const barW = Math.max(4, Math.min(28, slot * 0.7));
+  const innerX = gutter;
+  const innerW = VIEW_W - innerX - 6;
+  const slot = innerW / days.length;
+  const barW = Math.max(2, Math.min(20, slot * 0.7));
 
-  // Label every Nth bar so at most ~10 labels show.
-  const step = items.length > 10 ? Math.ceil(items.length / 10) : 1;
-  const rotate = items.length > 10;
+  const minToY = (min: number): number => top + (min / 1440) * plotH;
 
-  const bars = items
-    .map((b, i) => {
+  // Faint gridlines + hour ticks in the gutter.
+  const gridAndTicks = STRIP_HOUR_TICKS.map((t) => {
+    const y = minToY(t.min);
+    const line = `<line x1="${innerX}" y1="${n(y)}" x2="${innerX + innerW}" y2="${n(y)}" stroke="#ECECEA"/>`;
+    const text = `<text x="4" y="${n(y + 4)}" font-size="12" fill="#5C5C58">${esc(t.label)}</text>`;
+    return line + text;
+  }).join('');
+
+  // Label every Nth day so at most ~10 labels show.
+  const step = days.length > 10 ? Math.ceil(days.length / 10) : 1;
+  const rotate = days.length > 10;
+
+  const bars = days
+    .map((d, i) => {
       const cx = innerX + slot * i + slot / 2;
       const x = cx - barW / 2;
-      let yCursor = axisY;
-      const segs = b.segments
+      const segs = d.segments
         .map((seg) => {
-          const segH = maxTotal === 0 ? 0 : (seg.minutes / maxTotal) * plotH;
-          yCursor -= segH;
-          const fill = palette[seg.name] ?? '#A8A89D';
-          return `<rect x="${n(x)}" y="${n(yCursor)}" width="${n(barW)}" height="${n(segH)}" fill="${esc(fill)}"/>`;
+          const y = minToY(seg.startMin);
+          const h = Math.max(0, minToY(seg.endMin) - y);
+          return `<rect x="${n(x)}" y="${n(y)}" width="${n(barW)}" height="${n(h)}" fill="${esc(seg.color)}"/>`;
         })
         .join('');
 
@@ -134,7 +252,7 @@ function dailyTimelineCard(
       if (i % step === 0) {
         const lx = cx;
         const ly = axisY + 14;
-        const text = esc(b.label);
+        const text = esc(d.label);
         label = rotate
           ? `<text x="${n(lx)}" y="${n(ly)}" font-size="12" fill="#5C5C58" text-anchor="end" transform="rotate(-45 ${n(lx)} ${n(ly)})">${text}</text>`
           : `<text x="${n(lx)}" y="${n(ly)}" font-size="12" fill="#5C5C58" text-anchor="middle">${text}</text>`;
@@ -142,8 +260,6 @@ function dailyTimelineCard(
       return segs + label;
     })
     .join('');
-
-  const baseline = `<line x1="${innerX}" y1="${axisY}" x2="${innerX + innerW}" y2="${axisY}" stroke="#ECECEA"/>`;
 
   const legend = legendCats
     .map((t, i) => {
@@ -156,52 +272,8 @@ function dailyTimelineCard(
     .join('');
 
   return card(
-    'DAILY TIMELINE',
-    `<svg viewBox="0 0 ${VIEW_W} ${n(height)}" width="100%" role="img" aria-label="Daily timeline">${baseline}${bars}${legend}</svg>`,
-  );
-}
-
-// ─── 3. AVERAGE BY DAY OF WEEK ─────────────────────────────────────────────────
-
-function weekdayRhythmCard(byWeekday: WeekdayAvg[]): string {
-  const maxAvg = byWeekday.length === 0 ? 0 : Math.max(...byWeekday.map((w) => w.avgMinutes));
-  if (byWeekday.length === 0 || maxAvg <= 0) return emptyCard('AVERAGE BY DAY OF WEEK');
-
-  const top = 24; // room for value labels above bars
-  const plotH = 140;
-  const axisY = top + plotH;
-  const labelBandH = 20;
-  const height = axisY + labelBandH + 8;
-
-  const innerX = 8;
-  const innerW = VIEW_W - innerX * 2;
-  const slot = innerW / byWeekday.length;
-  const barW = Math.min(28, slot * 0.6);
-
-  const bars = byWeekday
-    .map((w, i) => {
-      const cx = innerX + slot * i + slot / 2;
-      const x = cx - barW / 2;
-      const barH = maxAvg === 0 ? 0 : (w.avgMinutes / maxAvg) * plotH;
-      const y = axisY - barH;
-      const parts = [
-        `<rect x="${n(x)}" y="${n(y)}" width="${n(barW)}" height="${n(barH)}" rx="3" fill="#3D6F8E"/>`,
-        `<text x="${n(cx)}" y="${n(axisY + 14)}" font-size="12" fill="#5C5C58" text-anchor="middle">${esc(w.weekday)}</text>`,
-      ];
-      if (w.avgMinutes > 0) {
-        parts.push(
-          `<text x="${n(cx)}" y="${n(y - 5)}" font-size="12" fill="#111111" text-anchor="middle">${esc(w.hoursLabel)}</text>`,
-        );
-      }
-      return parts.join('');
-    })
-    .join('');
-
-  const baseline = `<line x1="${innerX}" y1="${axisY}" x2="${innerX + innerW}" y2="${axisY}" stroke="#ECECEA"/>`;
-
-  return card(
-    'AVERAGE BY DAY OF WEEK',
-    `<svg viewBox="0 0 ${VIEW_W} ${height}" width="100%" role="img" aria-label="Average by day of week">${baseline}${bars}</svg>`,
+    'YOUR DAYS',
+    `<svg viewBox="0 0 ${VIEW_W} ${n(height)}" width="100%" role="img" aria-label="Your days">${gridAndTicks}${bars}${legend}</svg>`,
   );
 }
 
@@ -248,15 +320,16 @@ const STYLE = `<style>
 .cw-charts .cw-card { background:#ffffff; border:1px solid #ECECEA; border-radius:12px; padding:16px; margin-bottom:16px; }
 .cw-charts .cw-eyebrow { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:#5C5C58; margin-bottom:10px; }
 .cw-charts .cw-empty { font-size:12px; color:#5C5C58; margin:0; }
+.cw-charts .cw-caption { font-size:12px; color:#5C5C58; margin:0 0 8px; }
 .cw-charts svg { display:block; width:100%; }
 .cw-charts svg text { font-size:12px; }
 </style>`;
 
 export function renderCharts(datasets: ChartDatasets): string {
   const cards: string[] = [
+    heatmapCard(datasets.heatmap),
+    dailyStripCard(datasets.strip, datasets.categoryTotals),
     categoryBreakdownCard(datasets.categoryTotals),
-    dailyTimelineCard(datasets.buckets, datasets.categoryTotals, datasets.palette),
-    weekdayRhythmCard(datasets.byWeekday),
   ];
   if (datasets.goalProgress.length > 0) {
     cards.push(goalProgressCard(datasets.goalProgress));
