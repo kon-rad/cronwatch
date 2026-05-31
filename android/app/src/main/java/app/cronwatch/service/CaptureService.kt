@@ -100,7 +100,7 @@ class CaptureService @Inject constructor(
                 delay(500)
                 return@withContext listOf(
                     CapturedEntryDraft(
-                        category = "deep",
+                        category = "work",
                         note = trimmed,
                         startTime = isoNow(now),
                         endTime = isoNow(now),
@@ -136,7 +136,7 @@ class CaptureService @Inject constructor(
             transcript = "deep work on the auth refactor from 9 to 10:30",
             drafts = listOf(
                 CapturedEntryDraft(
-                    category = "deep",
+                    category = "work",
                     note = "stubbed capture",
                     startTime = nowIso,
                     endTime = nowIso,

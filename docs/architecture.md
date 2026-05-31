@@ -151,7 +151,7 @@ The end-to-end pipeline that turns a tap on the FAB into a structured Firestore 
 
 ```json
 {
-  "category":  "string",            // short label, e.g. "deep work", "meetings"
+  "category":  "string",            // short label, e.g. "work", "meetings"
   "note":      "string",            // free-form description from the transcript
   "startTime": "2026-05-04T10:00:00Z",  // ISO 8601
   "endTime":   "2026-05-04T10:30:00Z"   // ISO 8601

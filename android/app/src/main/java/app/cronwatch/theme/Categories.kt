@@ -7,7 +7,6 @@ data class Category(val key: String, val label: String, val color: Color)
 object Categories {
     val all: List<Category> = listOf(
         Category("work", "Work", Color(0xFF3D6F8E)),
-        Category("deep", "Deep", Color(0xFF4F7A6A)),
         Category("meeting", "Meeting", Color(0xFFB07845)),
         Category("study", "Study", Color(0xFF8A6FA3)),
         Category("exercise", "Exercise", Color(0xFFC8412C)),

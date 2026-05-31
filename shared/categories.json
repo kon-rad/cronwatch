@@ -1,6 +1,5 @@
 [
   { "key": "work", "label": "Work" },
-  { "key": "deep", "label": "Deep" },
   { "key": "meeting", "label": "Meeting" },
   { "key": "study", "label": "Study" },
   { "key": "exercise", "label": "Exercise" },

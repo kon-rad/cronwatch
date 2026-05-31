@@ -14,7 +14,7 @@ Response:
 {
   "transcript": "deep work on the auth refactor from 9 to 10:30",
   "drafts": [{
-    "category":  "deep",
+    "category":  "work",
     "note":      "Auth refactor",
     "startTime": "2026-05-07T09:00:00.000Z",
     "endTime":   "2026-05-07T10:30:00.000Z"

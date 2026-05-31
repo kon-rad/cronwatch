@@ -69,7 +69,7 @@ Response:
     {
       "id": "c_1737014400000_a1b2c3",
       "captureId": "c_1737014400000_a1b2c3",
-      "category": "deep",
+      "category": "work",
       "note": "API architecture review",
       "startTime": "2026-01-16T09:00:00.000Z",
       "endTime":   "2026-01-16T10:30:00.000Z",
@@ -88,7 +88,7 @@ Entry fields:
 |--------------|-----------------|------------------------------------------------|
 | `id`         | string          | Unique entry identifier.                       |
 | `captureId`  | string          | Voice capture this entry came from.            |
-| `category`   | string          | Activity category, e.g. `deep`, `admin`, `rest`. |
+| `category`   | string          | Activity category, e.g. `work`, `admin`, `rest`. |
 | `note`       | string          | Short summary of the block.                    |
 | `startTime`  | ISO 8601 (UTC)  | When the block started.                        |
 | `endTime`    | ISO 8601 (UTC)  | When the block ended.                          |
@@ -111,7 +111,7 @@ Response:
 {
   "uid": "8f2c…",
   "goals": [
-    { "category": "deep", "weeklyTargetHours": 20 },
+    { "category": "work", "weeklyTargetHours": 20 },
     { "category": "rest", "weeklyTargetHours": 14 }
   ]
 }

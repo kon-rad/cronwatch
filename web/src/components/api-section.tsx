@@ -75,7 +75,7 @@ export function ApiSection() {
     {
       "id": "c_1737014400000_a1b2c3",
       "captureId": "c_1737014400000_a1b2c3",
-      "category": "deep",
+      "category": "work",
       "note": "API architecture review",
       "startTime": "2025-01-16T09:00:00.000Z",
       "endTime":   "2025-01-16T10:30:00.000Z",

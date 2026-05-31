@@ -46,11 +46,11 @@ const CATEGORY_ALIASES: Record<string, string> = {
   sync: 'meeting',
   call: 'meeting',
   '1:1': 'meeting',
-  focus: 'deep',
-  refactor: 'deep',
-  coding: 'deep',
-  writing: 'deep',
-  design: 'deep',
+  focus: 'work',
+  refactor: 'work',
+  coding: 'work',
+  writing: 'work',
+  design: 'work',
   nap: 'sleep',
   movie: 'entertain',
   tv: 'entertain',
@@ -67,7 +67,7 @@ function normalizeCategory(raw: string): string {
   const cleaned = raw.trim().toLowerCase();
   if (CATEGORY_SET.has(cleaned)) return cleaned;
   if (CATEGORY_ALIASES[cleaned]) return CATEGORY_ALIASES[cleaned];
-  // try first token (e.g., "deep work" → "deep")
+  // try first token (e.g., "meal prep" → "meal")
   const first = cleaned.split(/[\s_-]+/)[0] ?? '';
   if (CATEGORY_SET.has(first)) return first;
   if (CATEGORY_ALIASES[first]) return CATEGORY_ALIASES[first];

@@ -142,7 +142,7 @@ export default function DocsPage() {
     {
       "id": "c_1737014400000_a1b2c3",
       "captureId": "c_1737014400000_a1b2c3",
-      "category": "deep",
+      "category": "work",
       "note": "API architecture review",
       "startTime": "2026-01-16T09:00:00.000Z",
       "endTime":   "2026-01-16T10:30:00.000Z",
@@ -160,7 +160,7 @@ export default function DocsPage() {
           rows={[
             ["id", "string", "Unique entry identifier."],
             ["captureId", "string", "ID of the voice capture this entry came from. Falls back to id."],
-            ["category", "string", "Activity category, e.g. deep, admin, rest."],
+            ["category", "string", "Activity category, e.g. work, admin, rest."],
             ["note", "string", "Short human-readable summary of the block."],
             ["startTime", "ISO 8601", "When the block started (UTC)."],
             ["endTime", "ISO 8601", "When the block ended (UTC)."],
@@ -188,7 +188,7 @@ export default function DocsPage() {
           code={`{
   "uid": "8f2c…",
   "goals": [
-    { "category": "deep", "weeklyTargetHours": 20 },
+    { "category": "work", "weeklyTargetHours": 20 },
     { "category": "rest", "weeklyTargetHours": 14 }
   ]
 }`}

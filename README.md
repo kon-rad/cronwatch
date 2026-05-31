@@ -26,7 +26,7 @@ Every captured entry is normalized to:
 
 ```json
 {
-  "category":  "deep work",
+  "category":  "work",
   "note":      "auth refactor",
   "startTime": "2026-05-04T09:00:00Z",
   "endTime":   "2026-05-04T10:30:00Z"
