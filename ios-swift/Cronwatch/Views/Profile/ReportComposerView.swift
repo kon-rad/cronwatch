@@ -4,22 +4,18 @@ struct ReportComposerView: View {
     let uid: String
     let goals: [String]
     let onClose: () -> Void
-    let onCreated: (ProfileReport) -> Void
 
     @State private var rangeStart: Date
     @State private var rangeEnd: Date
     @State private var customPrompt: String = ""
-    @State private var generating: Bool = false
-    @State private var errorMessage: String?
     @FocusState private var promptFocused: Bool
 
     private let maxPromptLength = 500
 
-    init(uid: String, goals: [String], onClose: @escaping () -> Void, onCreated: @escaping (ProfileReport) -> Void) {
+    init(uid: String, goals: [String], onClose: @escaping () -> Void) {
         self.uid = uid
         self.goals = goals
         self.onClose = onClose
-        self.onCreated = onCreated
         let cal = Calendar.current
         let endDay = cal.startOfDay(for: Date())
         let startDay = cal.date(byAdding: .day, value: -6, to: endDay) ?? endDay
@@ -40,10 +36,6 @@ struct ReportComposerView: View {
 
                         eyebrow("CUSTOM PROMPT (OPTIONAL)")
                         promptCard
-
-                        if let errorMessage {
-                            errorBlock(errorMessage)
-                        }
                     }
                     .padding(Spacing.md)
                 }
@@ -54,17 +46,12 @@ struct ReportComposerView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onClose)
-                        .disabled(generating)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(action: { Task { await generate() } }) {
-                        if generating {
-                            ProgressView()
-                        } else {
-                            Text("Generate").fontWeight(.semibold)
-                        }
+                    Button(action: generate) {
+                        Text("Generate").fontWeight(.semibold)
                     }
-                    .disabled(generating || !rangeValid)
+                    .disabled(!rangeValid)
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
@@ -73,7 +60,6 @@ struct ReportComposerView: View {
                 }
             }
         }
-        .interactiveDismissDisabled(generating)
     }
 
     private var rangeValid: Bool {
@@ -138,69 +124,17 @@ struct ReportComposerView: View {
             .foregroundStyle(Palette.muted)
     }
 
-    private func errorBlock(_ message: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Couldn’t generate")
-                .font(.cwCaption.weight(.semibold))
-                .foregroundStyle(Palette.danger)
-            Text(message)
-                .font(.cwCaption)
-                .foregroundStyle(Palette.ink)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.danger.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
-    }
-
-    private func generate() async {
-        guard !generating else { return }
-        generating = true
-        errorMessage = nil
-        defer { generating = false }
-
-        let cal = Calendar.current
-        let normalizedStart = cal.startOfDay(for: rangeStart)
-        guard let normalizedEnd = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: rangeEnd))?
-                .addingTimeInterval(-1) else {
-            errorMessage = "Invalid date range."
-            return
-        }
-
-        do {
-            let entries = try await EntriesService.shared.fetchRange(
-                uid: uid,
-                from: normalizedStart,
-                to: normalizedEnd
-            )
-            let days = RangeAggregator.aggregate(
-                entries: entries,
-                rangeStart: normalizedStart,
-                rangeEnd: normalizedEnd
-            )
-            let trimmedPrompt = customPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-            let generated = try await ProfileReportGenerator.generate(
-                rangeStart: normalizedStart,
-                rangeEnd: normalizedEnd,
-                goals: goals,
-                customPrompt: trimmedPrompt.isEmpty ? nil : trimmedPrompt,
-                days: days
-            )
-            let report = ProfileReport(
-                id: ProfileReportsService.newReportId(),
-                title: generated.title,
-                html: generated.html,
-                rangeStart: normalizedStart,
-                rangeEnd: normalizedEnd,
-                customPrompt: trimmedPrompt.isEmpty ? nil : trimmedPrompt,
-                createdAt: Date()
-            )
-            try await ProfileReportsService.shared.save(uid: uid, report: report)
-            onCreated(report)
-        } catch {
-            print("[ReportComposer] generate failed: \(error)")
-            errorMessage = error.localizedDescription
-        }
+    /// Fire-and-forget: hand the work to the background coordinator and close.
+    /// The report shows up in the list as "generating" and updates live.
+    private func generate() {
+        promptFocused = false
+        ReportGenerationCoordinator.shared.enqueue(
+            uid: uid,
+            rangeStart: rangeStart,
+            rangeEnd: rangeEnd,
+            goals: goals,
+            customPrompt: customPrompt
+        )
+        onClose()
     }
 }

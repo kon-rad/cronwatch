@@ -1,5 +1,11 @@
 import Foundation
 
+enum ReportStatus: String {
+    case generating
+    case ready
+    case failed
+}
+
 struct ProfileReport: Identifiable, Hashable {
     let id: String
     var title: String
@@ -8,4 +14,6 @@ struct ProfileReport: Identifiable, Hashable {
     var rangeEnd: Date
     var customPrompt: String?
     let createdAt: Date
+    var status: ReportStatus = .ready
+    var errorMessage: String?
 }
