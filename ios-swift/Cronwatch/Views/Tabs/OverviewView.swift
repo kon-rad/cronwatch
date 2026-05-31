@@ -48,7 +48,6 @@ struct OverviewView: View {
     @State private var showGoalsEditor: Bool = false
 
     @State private var showReportComposer: Bool = false
-    @State private var openReportDetail: ProfileReport?
 
     @State private var selectedPeriod: OverviewPeriod = .today
     @State private var dayTick: Date = Date()
@@ -151,16 +150,9 @@ struct OverviewView: View {
                 ReportComposerView(
                     uid: uid,
                     goals: reportGoals,
-                    onClose: { showReportComposer = false },
-                    onCreated: { newReport in
-                        showReportComposer = false
-                        openReportDetail = newReport
-                    }
+                    onClose: { showReportComposer = false }
                 )
             }
-        }
-        .fullScreenCover(item: $openReportDetail) { report in
-            ReportDetailView(report: report) { openReportDetail = nil }
         }
     }
 

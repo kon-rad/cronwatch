@@ -10,7 +10,6 @@ struct ProfileReportsSection: View {
     @State private var unsubscribe: (() -> Void)?
     @State private var showComposer = false
     @State private var showAllReports = false
-    @State private var openReport: ProfileReport?
     @State private var showPaywall = false
 
     var body: some View {
@@ -46,18 +45,11 @@ struct ProfileReportsSection: View {
             ReportComposerView(
                 uid: uid,
                 goals: goals,
-                onClose: { showComposer = false },
-                onCreated: { newReport in
-                    showComposer = false
-                    openReport = newReport
-                }
+                onClose: { showComposer = false }
             )
         }
         .fullScreenCover(isPresented: $showAllReports) {
-            ProfileReportsListView(uid: uid) { showAllReports = false }
-        }
-        .fullScreenCover(item: $openReport) { report in
-            ReportDetailView(report: report) { openReport = nil }
+            ProfileReportsListView(uid: uid, goals: goals) { showAllReports = false }
         }
     }
 
@@ -123,6 +115,7 @@ struct ProfileReportsSection: View {
 
 private struct ProfileReportsListView: View {
     let uid: String
+    let goals: [String]
     let onClose: () -> Void
 
     @State private var reports: [ProfileReport] = []
@@ -210,13 +203,13 @@ private struct ProfileReportsListView: View {
                 Rectangle().fill(Palette.border).frame(height: 0.5)
             }
             Button {
-                openReport = report
+                onTap(report)
             } label: {
                 HStack(spacing: Spacing.sm) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(report.title)
+                        Text(title(for: report))
                             .font(.cwBody)
-                            .foregroundStyle(Palette.ink)
+                            .foregroundStyle(report.status == .failed ? Palette.danger : Palette.ink)
                             .lineLimit(1)
                         Text(subtitle(for: report))
                             .font(.cwCaption)
@@ -224,15 +217,14 @@ private struct ProfileReportsListView: View {
                             .lineLimit(1)
                     }
                     Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(Palette.muted)
+                    trailingAccessory(for: report)
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, 12)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(report.status == .generating)
             .contextMenu {
                 Button(role: .destructive) {
                     pendingDelete = report
@@ -243,12 +235,54 @@ private struct ProfileReportsListView: View {
         }
     }
 
+    @ViewBuilder
+    private func trailingAccessory(for report: ProfileReport) -> some View {
+        switch report.status {
+        case .generating:
+            ProgressView()
+                .controlSize(.small)
+        case .failed:
+            Image(systemName: "exclamationmark.arrow.circlepath")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(Palette.danger)
+        case .ready:
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(Palette.muted)
+        }
+    }
+
+    private func onTap(_ report: ProfileReport) {
+        switch report.status {
+        case .generating:
+            break
+        case .failed:
+            ReportGenerationCoordinator.shared.retry(uid: uid, report: report, goals: goals)
+        case .ready:
+            openReport = report
+        }
+    }
+
+    private func title(for report: ProfileReport) -> String {
+        switch report.status {
+        case .generating: return "Generating report…"
+        case .failed: return "Couldn’t generate — tap to retry"
+        case .ready: return report.title
+        }
+    }
+
     private func subtitle(for report: ProfileReport) -> String {
         let f = DateFormatter()
         f.dateFormat = "MMM d"
         let range = "\(f.string(from: report.rangeStart)) – \(f.string(from: report.rangeEnd))"
-        let created = relativeCreatedAt(report.createdAt)
-        return "\(range) · \(created)"
+        switch report.status {
+        case .generating:
+            return "\(range) · generating…"
+        case .failed:
+            return range
+        case .ready:
+            return "\(range) · \(relativeCreatedAt(report.createdAt))"
+        }
     }
 
     private func relativeCreatedAt(_ date: Date) -> String {
