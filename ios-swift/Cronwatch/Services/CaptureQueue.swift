@@ -14,6 +14,10 @@ struct CaptureJob: Identifiable, Equatable, Codable {
     var status: CaptureJobStatus
     var error: String?
     let createdAt: Date
+    /// Transcription provider chosen when this job was enqueued. Optional so that
+    /// jobs persisted before this field existed still decode (they default to the
+    /// prior server-Deepgram behavior). Unused for text-only jobs.
+    var transcriptionProvider: TranscriptionProvider?
 }
 
 @MainActor
@@ -35,6 +39,7 @@ final class CaptureQueue: ObservableObject {
                  audioURL: URL,
                  transcript: String? = nil,
                  entryDrafts: [CapturedEntryDraft]? = nil,
+                 provider: TranscriptionProvider = .default,
                  initialStatus: CaptureJobStatus = .queued,
                  error: String? = nil) -> String {
         let id = Self.newJobId()
@@ -48,7 +53,8 @@ final class CaptureQueue: ObservableObject {
             plan: nil,
             status: initialStatus,
             error: error,
-            createdAt: Date()
+            createdAt: Date(),
+            transcriptionProvider: provider
         )
         jobs.append(job)
         saveToDisk()
@@ -70,7 +76,8 @@ final class CaptureQueue: ObservableObject {
             plan: nil,
             status: .queued,
             error: nil,
-            createdAt: Date()
+            createdAt: Date(),
+            transcriptionProvider: nil
         )
         jobs.append(job)
         saveToDisk()
@@ -228,22 +235,38 @@ final class CaptureQueue: ObservableObject {
         var transcript = job.transcript
         var entryDrafts = job.entryDrafts
 
+        // Provider chosen at enqueue time. Legacy jobs (persisted before the field
+        // existed) default to server-side Deepgram, matching prior behavior.
+        let provider = job.transcriptionProvider ?? .deepgram
+
         if entryDrafts == nil {
+            // Step 1 — obtain a transcript if we don't have one yet.
             if transcript == nil {
-                // Need to transcribe via /capture (also returns structured drafts).
                 guard let audioURL = job.audioURL else {
                     return .failure("Missing audio for transcription.")
                 }
                 do {
-                    let result = try await CaptureService.capture(audioURL: audioURL)
-                    transcript = result.transcript
-                    entryDrafts = result.drafts
-                } catch let error as CaptureError {
-                    return .partial(
-                        transcript: transcript,
-                        entryDrafts: entryDrafts,
-                        error: error.localizedDescription
-                    )
+                    switch provider {
+                    case .speechAnalyzer:
+                        // Transcribe on-device; fall back to cheap cloud Whisper if
+                        // on-device recognition is unavailable or fails.
+                        do {
+                            transcript = try await OnDeviceTranscriber.transcribe(audioURL: audioURL)
+                        } catch {
+                            let result = try await CaptureService.capture(
+                                audioURL: audioURL, provider: .togetherWhisper
+                            )
+                            transcript = result.transcript
+                            entryDrafts = result.drafts
+                        }
+                    case .togetherWhisper, .deepgram:
+                        // Cloud transcription via /capture (also returns structured drafts).
+                        let result = try await CaptureService.capture(
+                            audioURL: audioURL, provider: provider
+                        )
+                        transcript = result.transcript
+                        entryDrafts = result.drafts
+                    }
                 } catch {
                     return .partial(
                         transcript: transcript,
@@ -251,16 +274,13 @@ final class CaptureQueue: ObservableObject {
                         error: error.localizedDescription
                     )
                 }
-            } else {
-                // Have transcript, need to structure it.
+            }
+
+            // Step 2 — structure the transcript into drafts (covers on-device voice
+            // captures and text-only jobs; cloud /capture already filled drafts above).
+            if entryDrafts == nil, let text = transcript {
                 do {
-                    entryDrafts = try await CaptureService.structureText(transcript ?? "")
-                } catch let error as CaptureError {
-                    return .partial(
-                        transcript: transcript,
-                        entryDrafts: entryDrafts,
-                        error: error.localizedDescription
-                    )
+                    entryDrafts = try await CaptureService.structureText(text)
                 } catch {
                     return .partial(
                         transcript: transcript,

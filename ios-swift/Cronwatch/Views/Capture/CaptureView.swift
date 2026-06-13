@@ -17,10 +17,15 @@ struct CaptureView: View {
     @EnvironmentObject var queue: CaptureQueue
     @StateObject private var recorder = AudioRecorder()
 
+    @ObservedObject private var consent = AIConsentStore.shared
+
     @State private var phase: CapturePhase = .idle
     @State private var typed: String = ""
     @State private var pulse: CGFloat = 1.0
     @State private var isPressing: Bool = false
+    @State private var showConsent: Bool = false
+    /// Action to run once the user agrees to the AI data disclosure.
+    @State private var pendingAfterConsent: (() -> Void)?
     @FocusState private var textFocused: Bool
 
     private var hasTypedContent: Bool {
@@ -54,6 +59,33 @@ struct CaptureView: View {
         .background(Palette.bg)
         .clipShape(RoundedCorners(radius: 20, corners: [.topLeft, .topRight]))
         .interactiveDismissDisabled(isInBusyPhase)
+        .sheet(isPresented: $showConsent) {
+            AIDataConsentView(
+                onAgree: {
+                    consent.recordConsent()
+                    showConsent = false
+                    let action = pendingAfterConsent
+                    pendingAfterConsent = nil
+                    action?()
+                },
+                onDecline: {
+                    pendingAfterConsent = nil
+                    showConsent = false
+                }
+            )
+            .presentationDetents([.large])
+        }
+    }
+
+    /// Runs `action` immediately if the user has already consented to AI data
+    /// sharing; otherwise presents the one-time disclosure and runs it on agree.
+    private func withAIConsent(_ action: @escaping () -> Void) {
+        if consent.hasConsented {
+            action()
+        } else {
+            pendingAfterConsent = action
+            showConsent = true
+        }
     }
 
     private var isInBusyPhase: Bool {
@@ -306,6 +338,14 @@ struct CaptureView: View {
 
     private func onPressIn() async {
         guard phase == .idle else { return }
+        // Disclose AI data sharing and get permission before any recording or
+        // upload happens. The user re-presses to record after agreeing.
+        guard consent.hasConsented else {
+            isPressing = false
+            pendingAfterConsent = nil
+            showConsent = true
+            return
+        }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         let granted = await recorder.requestPermission()
         guard granted else {
@@ -347,7 +387,7 @@ struct CaptureView: View {
             return
         }
 
-        _ = queue.enqueue(uid: uid, audioURL: recording.url)
+        _ = queue.enqueue(uid: uid, audioURL: recording.url, provider: TranscriptionSettings.shared.provider)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         phase = .queued
         try? await Task.sleep(nanoseconds: queuedFlashDuration)
@@ -368,11 +408,18 @@ struct CaptureView: View {
         guard !trimmed.isEmpty else { return }
         guard phase == .idle else { return }
         guard let uid = auth.currentUser?.uid else { return }
-        phase = .savingText
-        _ = queue.enqueueText(uid: uid, transcript: trimmed)
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-        try? await Task.sleep(nanoseconds: queuedFlashDuration)
-        dismiss()
+
+        // Typed entries are also sent to Together AI for structuring, so gate
+        // the first one on the same disclosure.
+        withAIConsent {
+            phase = .savingText
+            _ = queue.enqueueText(uid: uid, transcript: trimmed)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            Task {
+                try? await Task.sleep(nanoseconds: queuedFlashDuration)
+                dismiss()
+            }
+        }
     }
 }
 

@@ -25,7 +25,9 @@ export const env = {
   },
 
   deepgram: {
-    apiKey: required('DEEPGRAM_API_KEY'),
+    // Optional: only required when the client selects the "deepgram" transcription
+    // provider. On-device (SpeechAnalyzer) and Together Whisper never touch it.
+    apiKey: optional('DEEPGRAM_API_KEY'),
     model: optional('DEEPGRAM_MODEL', 'nova-3'),
   },
 
@@ -34,5 +36,7 @@ export const env = {
     model: optional('TOGETHER_MODEL', 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo'),
     // Larger, better-value model used for long-form HTML reports.
     reportModel: optional('TOGETHER_REPORT_MODEL', 'meta-llama/Llama-3.3-70B-Instruct-Turbo'),
+    // Whisper model used for cheap cloud transcription (the "together" provider).
+    whisperModel: optional('TOGETHER_WHISPER_MODEL', 'openai/whisper-large-v3'),
   },
 };

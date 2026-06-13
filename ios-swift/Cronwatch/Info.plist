@@ -47,6 +47,8 @@
 	<string>$(GOOGLE_IOS_CLIENT_ID)</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Cronwatch listens when you tap to capture an entry by voice.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Cronwatch transcribes your voice on-device to turn what you say into time entries.</string>
 	<key>REVENUECAT_API_KEY_IOS</key>
 	<string>$(REVENUECAT_API_KEY_IOS)</string>
 	<key>UILaunchScreen</key>

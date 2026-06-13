@@ -6,8 +6,7 @@ struct PaywallView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var rc: RevenueCatService
 
-    @State private var showCouponAlert = false
-    @State private var couponCode = ""
+    @State private var didRequestRedemption = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -43,7 +42,8 @@ struct PaywallView: View {
                 }
 
             Button("Have a coupon code?") {
-                showCouponAlert = true
+                didRequestRedemption = true
+                rc.presentOfferCodeRedemption()
             }
             .font(.system(size: 14, weight: .medium))
             .foregroundStyle(Palette.ink)
@@ -55,31 +55,17 @@ struct PaywallView: View {
             .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
             .padding(.bottom, 36)
         }
-        .alert("Redeem Code", isPresented: $showCouponAlert) {
-            TextField("Enter code", text: $couponCode)
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
-            Button("Redeem") {
-                let redeemed = rc.redeemCoupon(couponCode)
-                couponCode = ""
-                if redeemed {
-                    ToastCenter.shared.show(
-                        message: "Code accepted. Subscription active.",
-                        kind: .success,
-                        duration: 3
-                    )
-                    dismiss()
-                } else {
-                    ToastCenter.shared.show(
-                        message: "Invalid code.",
-                        kind: .error,
-                        duration: 3
-                    )
-                }
-            }
-            Button("Cancel", role: .cancel) { couponCode = "" }
-        } message: {
-            Text("Enter your coupon code to unlock a subscription.")
+        .onChange(of: rc.entitlement) { _, newValue in
+            // Only react to redemptions started from this button; purchase/restore
+            // flows handle their own toast + dismiss above.
+            guard didRequestRedemption, newValue != .free else { return }
+            didRequestRedemption = false
+            ToastCenter.shared.show(
+                message: "Code accepted. Subscription active.",
+                kind: .success,
+                duration: 3
+            )
+            dismiss()
         }
     }
 }

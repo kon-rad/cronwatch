@@ -13,8 +13,8 @@
 
 set -euo pipefail
 
-SSH_HOST="${SSH_HOST:-root@68.183.142.183}"
-SSH_KEY="${SSH_KEY:-~/.ssh/2026_do}"
+SSH_HOST="${SSH_HOST:-root@165.22.103.109}"
+SSH_KEY="${SSH_KEY:-~/.ssh/do2026v2}"
 APP_NAME="cronwatch-web"
 REMOTE_DIR="/opt/${APP_NAME}"
 

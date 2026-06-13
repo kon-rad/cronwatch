@@ -4,7 +4,7 @@ import multer from 'multer';
 import { env } from './env';
 import { requireFirebaseUser, type AuthedRequest } from './auth';
 import { requireApiKey } from './apiKeyAuth';
-import { transcribe } from './deepgram';
+import { transcribeAudio, parseProvider } from './transcribe';
 import { structure } from './together';
 import { profileReportHandler } from './profileReport';
 import { getMeHandler, getEntriesHandler } from './userApi';
@@ -58,12 +58,13 @@ app.post(
       mimeToExt(file.mimetype) ||
       'm4a';
     const contentType = file.mimetype || 'audio/m4a';
+    const provider = parseProvider(req.body?.provider);
 
     try {
-      console.log('[capture] uid=%s bytes=%d mime=%s ext=%s', uid, file.size, contentType, ext);
+      console.log('[capture] uid=%s bytes=%d mime=%s ext=%s provider=%s', uid, file.size, contentType, ext, provider);
       let transcript: string;
       try {
-        transcript = await transcribe(file.buffer, contentType);
+        transcript = await transcribeAudio(file.buffer, contentType, provider);
         console.log('[capture] transcription ok, length=%d', transcript.length);
       } catch (err) {
         console.error('[capture] transcription failed:', err);

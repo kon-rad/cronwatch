@@ -31,7 +31,9 @@ enum CaptureService {
 
     // MARK: - Public
 
-    static func capture(audioURL: URL, now: Date = Date()) async throws -> CaptureResult {
+    static func capture(audioURL: URL,
+                        provider: TranscriptionProvider = .deepgram,
+                        now: Date = Date()) async throws -> CaptureResult {
         guard let proxy = AppEnvironment.captureProxyURL else {
             throw CaptureError.proxyURLMissing
         }
@@ -59,6 +61,9 @@ enum CaptureService {
         body.appendString("\r\n")
         body.appendField(name: "now", value: isoString(from: now), boundary: boundary)
         body.appendField(name: "tz", value: TimeZone.current.identifier, boundary: boundary)
+        if let serverProvider = provider.serverValue {
+            body.appendField(name: "provider", value: serverProvider, boundary: boundary)
+        }
         body.appendString("--\(boundary)--\r\n")
         request.httpBody = body
 

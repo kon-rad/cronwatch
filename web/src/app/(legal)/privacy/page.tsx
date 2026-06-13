@@ -51,20 +51,24 @@ export default function PrivacyPage() {
         <li>Metadata such as when the entry was created and the capture source</li>
       </ul>
 
-      <h3>Voice recordings</h3>
+      <h3>Voice recordings and AI processing</h3>
       <p>
-        When you use voice capture, we send the audio clip to{" "}
-        <a href="https://deepgram.com" target="_blank" rel="noreferrer">
-          Deepgram
-        </a>{" "}
-        for transcription. The resulting text is then sent to{" "}
+        When you capture by voice, your audio recording is sent to{" "}
         <a href="https://together.ai" target="_blank" rel="noreferrer">
           Together AI
         </a>{" "}
-        and processed by an open-weights language model to extract a structured
-        entry (category, note, time range). We do not retain raw audio in our
-        own systems by default; if you opt into raw-audio storage in a future
-        version, the clip is stored in Firebase Storage scoped to your account.
+        and transcribed to text with the Whisper speech-to-text model. The
+        resulting text (along with the capture time and your time zone) is then
+        processed by an open-weights language model — also at Together AI — to
+        extract a structured entry (category, note, time range). Typed entries
+        skip transcription and are sent to Together AI for the same structuring
+        step.
+      </p>
+      <p>
+        The app discloses this and asks for your permission in-app before any
+        capture is sent. We do not retain raw audio in our own systems by
+        default; if you opt into raw-audio storage in a future version, the clip
+        is stored in Firebase Storage scoped to your account.
       </p>
 
       <h3>Subscription and payment information</h3>
@@ -104,12 +108,9 @@ export default function PrivacyPage() {
           storage, and crash reporting.
         </li>
         <li>
-          <strong>Deepgram</strong> — audio transcription. Audio is sent only
-          when you use voice capture.
-        </li>
-        <li>
-          <strong>Together AI</strong> — language model processing of
-          transcribed text to produce a structured entry.
+          <strong>Together AI</strong> — speech-to-text transcription of voice
+          captures (audio is sent only when you use voice capture), and language
+          model processing of the resulting text to produce a structured entry.
         </li>
         <li>
           <strong>RevenueCat &amp; Apple</strong> — subscription billing and
@@ -122,7 +123,10 @@ export default function PrivacyPage() {
       </ul>
       <p>
         We do not sell your data, and we do not share it with advertisers or
-        data brokers.
+        data brokers. Each sub-processor processes your data only to provide its
+        service to Cronwatch, under its own terms and a data processing
+        agreement, and is required to protect your data to a standard at least
+        equal to that described in this policy.
       </p>
 
       <h2>Where data is stored</h2>
@@ -130,7 +134,7 @@ export default function PrivacyPage() {
         Your entries and account information live in Google&apos;s Firebase
         infrastructure. Data may be processed in the United States and other
         regions where Google operates. Audio transcription and language model
-        processing happen in the regions operated by Deepgram and Together AI.
+        processing happen in the regions operated by Together AI.
       </p>
 
       <h2>How long we keep it</h2>

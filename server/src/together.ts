@@ -1,11 +1,50 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import Together from 'together-ai';
+import Together, { toFile } from 'together-ai';
 import { z } from 'zod';
 import { env } from './env';
 import { buildTranscriptSystemPrompt } from './prompts';
 
 const together = new Together({ apiKey: env.together.apiKey });
+
+/**
+ * Cheap cloud transcription via Together's Whisper endpoint. Used when the client
+ * selects the "together" provider — far cheaper than Deepgram, and the default
+ * fallback when on-device (SpeechAnalyzer) transcription is unavailable.
+ */
+export async function transcribeWithWhisper(
+  audio: Buffer,
+  contentType: string,
+): Promise<string> {
+  const ext = extFromContentType(contentType);
+  const file = await toFile(audio, `recording.${ext}`, { type: contentType });
+  const response = await together.audio.transcriptions.create({
+    file,
+    model: env.together.whisperModel as 'openai/whisper-large-v3',
+    language: 'en',
+    response_format: 'json',
+  });
+  const transcript = response.text;
+  if (typeof transcript !== 'string' || transcript.trim() === '') {
+    console.warn('[together-whisper] empty transcript', {
+      bytes: audio.length,
+      contentType,
+      model: env.together.whisperModel,
+    });
+    throw new Error("Couldn't hear any speech in that recording — try again.");
+  }
+  return transcript;
+}
+
+function extFromContentType(mime: string): string {
+  const m = mime.toLowerCase();
+  if (m.includes('wav')) return 'wav';
+  if (m.includes('webm')) return 'webm';
+  if (m.includes('ogg')) return 'ogg';
+  if (m.includes('mpeg') || m.includes('mp3')) return 'mp3';
+  if (m.includes('flac')) return 'flac';
+  return 'm4a';
+}
 
 // Single source of truth shared with the client. See shared/categories.json.
 const categoriesData = JSON.parse(

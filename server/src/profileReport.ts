@@ -4,8 +4,12 @@ import { z, type ZodType } from 'zod';
 import { env } from './env';
 import type { AuthedRequest } from './auth';
 import { PROFILE_REPORT_SYSTEM_PROMPT } from './prompts';
-import { buildChartDatasets, combineDocument, aggregateTotals, formatHm } from './chartData';
-import { renderCharts } from './chartRender';
+import { combineDocument, aggregateTotals, formatHm } from './chartData';
+// TODO: Chart generation is temporarily disabled — we will return to this in the
+// future. The chart pipeline (buildChartDatasets / renderCharts) is still present
+// in chartData.ts / chartRender.ts; only its invocation here is commented out.
+// import { buildChartDatasets } from './chartData';
+// import { renderCharts } from './chartRender';
 
 const together = new Together({ apiKey: env.together.apiKey });
 
@@ -90,15 +94,17 @@ export async function profileReportHandler(req: AuthedRequest, res: Response): P
     });
     const report = parseJsonContent(reportCompletion, reportResponseSchema);
 
-    // Pre-compute chart datasets from the structured data.
-    const datasets = buildChartDatasets(
-      days.map((d) => ({ date: d.date, categories: d.categories })),
-      nonEmptyGoals,
-      parsed.data.entries ?? [],
-    );
-
-    // Charts are rendered deterministically in code (no LLM call).
-    const chartsHtml = datasets.hasData ? renderCharts(datasets) : '';
+    // TODO: Chart generation is temporarily disabled — we will return to this in
+    // the future. For now we skip building/rendering charts entirely. Passing an
+    // empty chartsHtml makes combineDocument strip the CW_CHARTS marker cleanly.
+    //
+    // const datasets = buildChartDatasets(
+    //   days.map((d) => ({ date: d.date, categories: d.categories })),
+    //   nonEmptyGoals,
+    //   parsed.data.entries ?? [],
+    // );
+    // const chartsHtml = datasets.hasData ? renderCharts(datasets) : '';
+    const chartsHtml = '';
 
     const html = combineDocument(report.html, chartsHtml);
     res.json({ title: report.title, html } satisfies ReportResponse);

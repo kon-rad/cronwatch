@@ -4,6 +4,9 @@ import { env } from './env';
 const deepgram = new DeepgramClient({ apiKey: env.deepgram.apiKey });
 
 export async function transcribe(audio: Buffer, contentType: string): Promise<string> {
+  if (!env.deepgram.apiKey) {
+    throw new Error('Deepgram is not configured on this server (DEEPGRAM_API_KEY missing).');
+  }
   // The SDK's binary upload path can't infer Content-Type from a raw Buffer,
   // so it falls back to application/octet-stream and Deepgram fails to detect
   // the audio container (e.g. m4a/mp4). Pass mime + filename explicitly.
