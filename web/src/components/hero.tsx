@@ -39,33 +39,6 @@ export function Hero() {
           <div className="hero-reveal d4 flex gap-3 flex-wrap items-center">
             <StoreButtons />
           </div>
-
-          <div className="hero-reveal d5 mt-8 flex items-center gap-3.5 text-caption text-[13px] font-medium">
-            <div className="flex">
-              {[
-                "#EEF1ED",
-                "#F2EDE6",
-                "#F0EEF5",
-                "#FBEFD6",
-              ].map((c, i) => (
-                <div
-                  key={i}
-                  className="w-[26px] h-[26px] rounded-full border-2 border-bg"
-                  style={{ background: c, marginLeft: i === 0 ? 0 : -8 }}
-                />
-              ))}
-            </div>
-            <span className="inline-flex gap-px text-amber">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <svg key={i} width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2l2.9 6.9L22 10l-5.5 4.8L18 22l-6-3.6L6 22l1.5-7.2L2 10l7.1-1.1z" />
-                </svg>
-              ))}
-            </span>
-            <span>
-              <strong className="text-ink">4.8</strong> · 12,400+ days tracked
-            </span>
-          </div>
         </div>
 
         <div className="relative flex justify-center items-center min-h-[560px] md:min-h-[620px]">

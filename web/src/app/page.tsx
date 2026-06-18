@@ -1,6 +1,5 @@
 import { Nav } from "@/components/nav";
 import { Hero } from "@/components/hero";
-import { Marquee } from "@/components/marquee";
 import { Features } from "@/components/features";
 import { HowItWorks } from "@/components/how-it-works";
 import { DayTimeline } from "@/components/day-timeline";
@@ -16,7 +15,6 @@ export default function Home() {
       <RevealOnScroll />
       <Nav />
       <Hero />
-      <Marquee />
       <Features />
       <HowItWorks />
       <DayTimeline />
