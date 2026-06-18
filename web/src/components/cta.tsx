@@ -19,7 +19,7 @@ export function Cta() {
             Start tracking it like it.
           </h2>
           <p className="text-[16px] text-white/70 m-0 mb-7 max-w-[480px] leading-[1.55]">
-            Available on iOS and Android. Free to try, no credit card required.
+            Available on iOS. Free to try, no credit card required.
           </p>
           <div className="flex gap-3 flex-wrap items-center">
             <StoreButtons variant="light" />

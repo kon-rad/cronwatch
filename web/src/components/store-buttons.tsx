@@ -31,18 +31,6 @@ export function StoreButtons({ variant = "dark" }: StoreButtonsProps) {
           <span className={nameClasses}>App Store</span>
         </span>
       </a>
-      <a href="#" className={linkClasses}>
-        <svg width="22" height="22" viewBox="0 0 24 24">
-          <path d="M3.6 2.3v19.4l10.5-9.7z" fill={fill} />
-          <path d="M3.6 2.3l10.5 9.7L17.7 8.5z" fill={fill} opacity="0.85" />
-          <path d="M3.6 21.7l10.5-9.7 3.6 3.5z" fill={fill} opacity="0.7" />
-          <path d="M14.1 12l3.6 3.5 3.5-2c1.1-.6 1.1-2.4 0-3.0l-3.5-2z" fill={fill} opacity="0.55" />
-        </svg>
-        <span className="flex flex-col gap-px leading-[1.1] whitespace-nowrap">
-          <span className={labelClasses}>Get it on</span>
-          <span className={nameClasses}>Google Play</span>
-        </span>
-      </a>
     </>
   );
 }
