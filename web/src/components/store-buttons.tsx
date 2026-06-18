@@ -1,8 +1,8 @@
+import { APP_STORE_URL } from "@/lib/site";
+
 type StoreButtonsProps = {
   variant?: "dark" | "light";
 };
-
-const APP_STORE_URL = "https://apps.apple.com/us/app/cronwatch/id6767232025";
 
 export function StoreButtons({ variant = "dark" }: StoreButtonsProps) {
   const dark = variant === "dark";

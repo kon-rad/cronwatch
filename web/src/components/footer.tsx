@@ -1,4 +1,5 @@
 import { BrandMark } from "./brand-mark";
+import { GITHUB_URL } from "@/lib/site";
 
 export function Footer() {
   return (
@@ -10,7 +11,8 @@ export function Footer() {
             <span>Cronwatch</span>
           </a>
           <p className="m-0 max-w-[280px] leading-[1.55]">
-            Voice-first time tracking. Made quietly, in a small studio, with care.
+            Voice-first time tracking. Free and open source, made quietly, in a
+            small studio, with care.
           </p>
         </div>
         <FooterCol heading="Product" links={[
@@ -23,7 +25,7 @@ export function Footer() {
         <FooterCol heading="Company" links={[
           { label: "About", href: "#" },
           { label: "Blog", href: "/blog" },
-          { label: "Press kit", href: "#" },
+          { label: "GitHub", href: GITHUB_URL },
           { label: "Support", href: "/support" },
         ]} />
         <FooterCol heading="Legal" links={[
@@ -51,16 +53,20 @@ function FooterCol({
       <h4 className="text-[12px] uppercase tracking-[0.08em] m-0 mb-4 text-ink font-semibold">
         {heading}
       </h4>
-      {links.map((l) => (
-        <a
-          key={l.label}
-          href={l.href}
-          className="block py-1 text-ink-muted text-[14px] hover:text-ink transition-colors"
-          style={{ fontWeight: 450 }}
-        >
-          {l.label}
-        </a>
-      ))}
+      {links.map((l) => {
+        const external = l.href.startsWith("http");
+        return (
+          <a
+            key={l.label}
+            href={l.href}
+            {...(external ? { target: "_blank", rel: "noopener" } : {})}
+            className="block py-1 text-ink-muted text-[14px] hover:text-ink transition-colors"
+            style={{ fontWeight: 450 }}
+          >
+            {l.label}
+          </a>
+        );
+      })}
     </div>
   );
 }
