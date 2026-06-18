@@ -1,5 +1,7 @@
 # Cronwatch (iOS, native SwiftUI)
 
+**📲 Now live on the App Store: [Download Cronwatch](https://apps.apple.com/us/app/cronwatch/id6767232025)**
+
 A native SwiftUI port of the React Native / Expo client at [`../client`](../client). Same product, same design language, same Firestore data model — just rewritten as a pure Swift app for iOS.
 
 Voice-first time tracking: tap the mic, say what you did, see your day on a 15-minute grid.

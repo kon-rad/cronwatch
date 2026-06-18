@@ -2,6 +2,8 @@ type StoreButtonsProps = {
   variant?: "dark" | "light";
 };
 
+const APP_STORE_URL = "https://apps.apple.com/us/app/cronwatch/id6767232025";
+
 export function StoreButtons({ variant = "dark" }: StoreButtonsProps) {
   const dark = variant === "dark";
   const bg = dark ? "bg-[#1a1a1a]" : "bg-white";
@@ -15,7 +17,12 @@ export function StoreButtons({ variant = "dark" }: StoreButtonsProps) {
 
   return (
     <>
-      <a href="#" className={linkClasses}>
+      <a
+        href={APP_STORE_URL}
+        target="_blank"
+        rel="noopener"
+        className={linkClasses}
+      >
         <svg width="22" height="22" viewBox="0 0 24 24" fill={fill}>
           <path d="M16.5 12.6c0-2.5 2-3.7 2.1-3.8-1.2-1.7-3-1.9-3.7-1.9-1.5-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.3 1-4.2 2.5-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.5 1.3-.1 1.8-.8 3.4-.8s2 .8 3.3.8c1.4 0 2.3-1.2 3.1-2.5.6-.9 1.1-1.9 1.4-2.9-1.4-.6-2.8-2-2.8-4.1zM14.6 5.3c.7-.9 1.2-2.1 1-3.3-1.1.1-2.4.7-3.1 1.6-.7.8-1.3 2-1.1 3.2 1.2.1 2.4-.6 3.2-1.5z" />
         </svg>
