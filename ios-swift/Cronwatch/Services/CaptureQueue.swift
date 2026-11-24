@@ -235,9 +235,9 @@ final class CaptureQueue: ObservableObject {
         var transcript = job.transcript
         var entryDrafts = job.entryDrafts
 
-        // Provider chosen at enqueue time. Legacy jobs (persisted before the field
-        // existed) default to server-side Deepgram, matching prior behavior.
-        let provider = job.transcriptionProvider ?? .deepgram
+        // Provider chosen at enqueue time. Legacy jobs without one use the
+        // current Together transcription route.
+        let provider = job.transcriptionProvider ?? .togetherWhisper
 
         if entryDrafts == nil {
             // Step 1 — obtain a transcript if we don't have one yet.

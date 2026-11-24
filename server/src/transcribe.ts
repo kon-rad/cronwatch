@@ -10,11 +10,11 @@ export type TranscriptionProvider = 'deepgram' | 'together';
 
 const PROVIDERS: ReadonlySet<string> = new Set<TranscriptionProvider>(['deepgram', 'together']);
 
-/** Coerce an untrusted request value into a known provider, defaulting to Deepgram. */
+/** Coerce an untrusted request value into a known provider, defaulting to Together. */
 export function parseProvider(raw: unknown): TranscriptionProvider {
   return typeof raw === 'string' && PROVIDERS.has(raw)
     ? (raw as TranscriptionProvider)
-    : 'deepgram';
+    : 'together';
 }
 
 export async function transcribeAudio(

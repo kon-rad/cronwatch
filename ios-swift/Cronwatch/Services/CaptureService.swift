@@ -32,7 +32,7 @@ enum CaptureService {
     // MARK: - Public
 
     static func capture(audioURL: URL,
-                        provider: TranscriptionProvider = .deepgram,
+                        provider: TranscriptionProvider = .togetherWhisper,
                         now: Date = Date()) async throws -> CaptureResult {
         guard let proxy = AppEnvironment.captureProxyURL else {
             throw CaptureError.proxyURLMissing
