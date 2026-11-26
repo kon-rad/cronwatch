@@ -13,6 +13,19 @@ function optional(name: string, fallback = ''): string {
   return v && v.trim() !== '' ? v : fallback;
 }
 
+const STRUCTURE_MODEL = 'Qwen/Qwen3.5-9B';
+
+// Existing deployments may still pin one of these retired serverless models.
+// Keep custom model overrides while migrating the known old defaults.
+function togetherModel(name: string, fallback: string): string {
+  const configured = optional(name, fallback);
+  if (configured === 'meta-llama/Llama-3.3-70B-Instruct-Turbo' ||
+      configured === 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo') {
+    return fallback;
+  }
+  return configured;
+}
+
 export const env = {
   port: Number(process.env.PORT ?? 8080),
   allowedOrigins: optional('ALLOWED_ORIGINS', '*'),
@@ -33,9 +46,9 @@ export const env = {
 
   together: {
     apiKey: required('TOGETHER_API_KEY'),
-    model: optional('TOGETHER_MODEL', 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo'),
+    model: togetherModel('TOGETHER_MODEL', STRUCTURE_MODEL),
     // Larger, better-value model used for long-form HTML reports.
-    reportModel: optional('TOGETHER_REPORT_MODEL', 'meta-llama/Llama-3.3-70B-Instruct-Turbo'),
+    reportModel: togetherModel('TOGETHER_REPORT_MODEL', STRUCTURE_MODEL),
     // Whisper model used for cheap cloud transcription (the "together" provider).
     whisperModel: optional('TOGETHER_WHISPER_MODEL', 'openai/whisper-large-v3'),
   },
